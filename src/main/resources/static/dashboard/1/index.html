@@ -1,0 +1,1221 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <title>Quản Lý Nhà Hàng Thanh Hóa - Trang Quản Trị Admin</title>
+
+  <base href="/dashboard/1/">
+
+  <!-- Immediate Clean URL & Admin Token Guard -->
+  <script>
+    (function() {
+      try {
+        let path = window.location.pathname;
+        if (path.endsWith('.html') || path.includes('/dashboard/1')) {
+          let clean = path.replace(/index\.html$/, '').replace(/\/dashboard\/1\/?/, '/admin/').replace(/\/+$/, '');
+          if (!clean || clean === '') clean = '/admin';
+          window.history.replaceState(null, '', clean + window.location.search + window.location.hash);
+        }
+      } catch(e) {}
+
+      const token = localStorage.getItem("token");
+      if (!token) {
+        window.location.href = "/login";
+        return;
+      }
+      try {
+        const base64Url = token.split('.')[1];
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        const jsonPayload = decodeURIComponent(atob(base64).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
+        const payload = JSON.parse(jsonPayload);
+
+        if (payload.exp && payload.exp * 1000 < Date.now()) {
+          alert("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại!");
+          localStorage.clear();
+          window.location.href = "/login";
+          return;
+        }
+
+        const roles = payload.roles || [];
+        const isAdmin = roles.includes("ROLE_ADMIN") || roles.includes("ADMIN");
+        if (!isAdmin) {
+          alert("Bạn không có quyền truy cập trang quản trị Admin!");
+          localStorage.clear();
+          window.location.href = "/login";
+        }
+      } catch(e) {
+        localStorage.clear();
+        window.location.href = "/login";
+      }
+    })();
+  </script>
+
+  <!-- Icons -->
+  <link rel="stylesheet" href="assets/vendors/mdi/css/materialdesignicons.min.css">
+  <!-- Vendor Styles -->
+  <link rel="stylesheet" href="assets/vendors/css/vendor.bundle.base.css">
+  <!-- Purple Admin Style -->
+  <link rel="stylesheet" href="assets/css/style.css">
+  <link rel="shortcut icon" href="assets/images/favicon.ico">
+</head>
+
+<body>
+
+<div class="container-scroller">
+
+  <!-- ================= NAVBAR ================= -->
+  <nav class="navbar default-layout-navbar col-lg-12 col-12 p-0 fixed-top d-flex flex-row">
+    <div class="text-center navbar-brand-wrapper d-flex align-items-center justify-content-center">
+      <a class="navbar-brand brand-logo" href="javascript:void(0);" onclick="showTab('dashboard', true, event)">
+        <span style="font-size: 20px; font-weight: bold; color: #b66dff;">
+            🍽️ NHÀ HÀNG
+        </span>
+      </a>
+      <a class="navbar-brand brand-logo-mini" href="javascript:void(0);" onclick="showTab('dashboard', true, event)">
+        <span style="font-size: 20px;">🍽️</span>
+      </a>
+    </div>
+
+    <div class="navbar-menu-wrapper d-flex align-items-stretch">
+      <button class="navbar-toggler navbar-toggler align-self-center" type="button" data-toggle="minimize">
+        <span class="mdi mdi-menu"></span>
+      </button>
+
+      <ul class="navbar-nav navbar-nav-right">
+        <!-- Profile Dropdown -->
+        <li class="nav-item nav-profile dropdown">
+          <a class="nav-link dropdown-toggle" id="profileDropdown" href="javascript:void(0);" data-bs-toggle="dropdown" aria-expanded="false">
+            <div class="nav-profile-img">
+              <img src="assets/images/faces/face1.jpg" alt="profile" onerror="this.src='https://via.placeholder.com/40?text=Admin'">
+              <span class="availability-status online"></span>
+            </div>
+            <div class="nav-profile-text">
+              <p class="mb-1 text-black font-weight-bold" id="headerUserName">Quản trị viên</p>
+            </div>
+          </a>
+          <div class="dropdown-menu navbar-dropdown" aria-labelledby="profileDropdown">
+            <a class="dropdown-item" href="javascript:void(0);" onclick="showTab('users', true, event)">
+              <i class="mdi mdi-account-cog me-2 text-primary"></i> Quản lý tài khoản
+            </a>
+            <div class="dropdown-divider"></div>
+            <a class="dropdown-item text-danger" href="javascript:void(0);" onclick="logout()">
+              <i class="mdi mdi-logout me-2 text-danger"></i> Đăng xuất
+            </a>
+          </div>
+        </li>
+
+        <!-- Quick Logout -->
+        <li class="nav-item nav-logout d-none d-lg-block">
+          <a class="nav-link text-danger" href="javascript:void(0);" onclick="logout()" title="Đăng xuất">
+            <i class="mdi mdi-power"></i>
+          </a>
+        </li>
+      </ul>
+
+      <button class="navbar-toggler navbar-toggler-right d-lg-none align-self-center" type="button" data-toggle="offcanvas">
+        <span class="mdi mdi-menu"></span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- ================= MAIN BODY ================= -->
+  <div class="container-fluid page-body-wrapper">
+
+    <!-- ================= SIDEBAR ================= -->
+    <nav class="sidebar sidebar-offcanvas" id="sidebar">
+      <ul class="nav">
+        <!-- User Profile Card -->
+        <li class="nav-item nav-profile">
+          <a href="javascript:void(0);" class="nav-link">
+            <div class="nav-profile-image">
+              <img src="assets/images/faces/face1.jpg" alt="profile" onerror="this.src='https://via.placeholder.com/40?text=Admin'">
+              <span class="login-status online"></span>
+            </div>
+            <div class="nav-profile-text d-flex flex-column">
+              <span class="font-weight-bold mb-1" id="sidebarUserName">Quản trị viên</span>
+              <span class="text-secondary text-small badge bg-danger text-white">ROLE_ADMIN</span>
+            </div>
+            <i class="mdi mdi-shield-check text-success nav-profile-badge"></i>
+          </a>
+        </li>
+
+        <!-- Navigation Menu Items -->
+        <li class="nav-item active" id="nav-dashboard">
+          <a class="nav-link" href="javascript:void(0);" onclick="showTab('dashboard', true, event)">
+            <span class="menu-title">Tổng quan (Dashboard)</span>
+            <i class="mdi mdi-view-dashboard menu-icon"></i>
+          </a>
+        </li>
+
+        <li class="nav-item" id="nav-users">
+          <a class="nav-link" href="javascript:void(0);" onclick="showTab('users', true, event)">
+            <span class="menu-title">Quản lý Tài khoản</span>
+            <i class="mdi mdi-account-group menu-icon"></i>
+          </a>
+        </li>
+
+        <li class="nav-item" id="nav-categories">
+          <a class="nav-link" href="javascript:void(0);" onclick="showTab('categories', true, event)">
+            <span class="menu-title">Danh mục Món ăn</span>
+            <i class="mdi mdi-shape-plus menu-icon"></i>
+          </a>
+        </li>
+
+        <li class="nav-item" id="nav-products">
+          <a class="nav-link" href="javascript:void(0);" onclick="showTab('products', true, event)">
+            <span class="menu-title">Quản lý Món ăn</span>
+            <i class="mdi mdi-food menu-icon"></i>
+          </a>
+        </li>
+
+        <li class="nav-item" id="nav-tables">
+          <a class="nav-link" href="javascript:void(0);" onclick="showTab('tables', true, event)">
+            <span class="menu-title">Quản lý Bàn ăn</span>
+            <i class="mdi mdi-silverware-fork-knife menu-icon"></i>
+          </a>
+        </li>
+
+        <li class="nav-item" id="nav-orders">
+          <a class="nav-link" href="javascript:void(0);" onclick="showTab('orders', true, event)">
+            <span class="menu-title">Quản lý Đơn hàng</span>
+            <i class="mdi mdi-cart-outline menu-icon"></i>
+          </a>
+        </li>
+
+        <li class="nav-item" id="nav-invoices">
+          <a class="nav-link" href="javascript:void(0);" onclick="showTab('invoices', true, event)">
+            <span class="menu-title">Hóa đơn & Thanh toán</span>
+            <i class="mdi mdi-receipt menu-icon"></i>
+          </a>
+        </li>
+
+        <li class="nav-item" id="nav-reports">
+          <a class="nav-link" href="javascript:void(0);" onclick="showTab('reports', true, event)">
+            <span class="menu-title">Doanh thu & Báo cáo</span>
+            <i class="mdi mdi-chart-line menu-icon"></i>
+          </a>
+        </li>
+
+        <li class="nav-item mt-4">
+          <a class="nav-link text-danger" href="javascript:void(0);" onclick="logout()">
+            <span class="menu-title font-weight-bold">Đăng xuất</span>
+            <i class="mdi mdi-logout menu-icon text-danger"></i>
+          </a>
+        </li>
+      </ul>
+    </nav>
+
+    <!-- ================= MAIN PANEL ================= -->
+    <div class="main-panel">
+      <div class="content-wrapper">
+
+        <!-- Global Alert Container -->
+        <div id="adminAlert" class="alert alert-success alert-dismissible fade show d-none" role="alert">
+          <span class="alert-message">Thao tác thành công</span>
+          <button type="button" class="btn-close" onclick="document.getElementById('adminAlert').classList.add('d-none')"></button>
+        </div>
+
+        <!-- ========================================================= -->
+        <!-- TAB 1: DASHBOARD OVERVIEW -->
+        <!-- ========================================================= -->
+        <div id="tab-dashboard" class="tab-content-section">
+          <div class="page-header">
+            <h3 class="page-title">
+              <span class="page-title-icon bg-gradient-primary text-white me-2">
+                <i class="mdi mdi-view-dashboard"></i>
+              </span>
+              Tổng Quan Nhà Hàng
+            </h3>
+            <button class="btn btn-outline-primary btn-sm" onclick="loadDashboard()">
+              <i class="mdi mdi-refresh"></i> Làm mới dữ liệu
+            </button>
+          </div>
+
+          <!-- KPI Cards -->
+          <div class="row">
+            <div class="col-md-3 stretch-card grid-margin">
+              <div class="card bg-gradient-danger card-img-holder text-white">
+                <div class="card-body">
+                  <img src="assets/images/dashboard/circle.svg" class="card-img-absolute" alt="circle">
+                  <h4 class="font-weight-normal mb-3">Doanh thu hôm nay <i class="mdi mdi-cash-multiple mdi-24px float-right"></i></h4>
+                  <h2 class="mb-3" id="todayRevenue">0 ₫</h2>
+                  <h6 class="card-text">Thanh toán hoàn tất</h6>
+                </div>
+              </div>
+            </div>
+
+            <div class="col-md-3 stretch-card grid-margin">
+              <div class="card bg-gradient-info card-img-holder text-white">
+                <div class="card-body">
+                  <img src="assets/images/dashboard/circle.svg" class="card-img-absolute" alt="circle">
+                  <h4 class="font-weight-normal mb-3">Đơn hàng <i class="mdi mdi-cart mdi-24px float-right"></i></h4>
+                  <h2 class="mb-3" id="todayOrders">0</h2>
+                  <h6 class="card-text">Tổng số đơn hàng</h6>
+                </div>
+              </div>
+            </div>
+
+            <div class="col-md-3 stretch-card grid-margin">
+              <div class="card bg-gradient-success card-img-holder text-white">
+                <div class="card-body">
+                  <img src="assets/images/dashboard/circle.svg" class="card-img-absolute" alt="circle">
+                  <h4 class="font-weight-normal mb-3">Bàn đang phục vụ <i class="mdi mdi-table-chair mdi-24px float-right"></i></h4>
+                  <h2 class="mb-3" id="activeTables">0</h2>
+                  <h6 class="card-text">Bàn đang có khách</h6>
+                </div>
+              </div>
+            </div>
+
+            <div class="col-md-3 stretch-card grid-margin">
+              <div class="card bg-gradient-primary card-img-holder text-white">
+                <div class="card-body">
+                  <img src="assets/images/dashboard/circle.svg" class="card-img-absolute" alt="circle">
+                  <h4 class="font-weight-normal mb-3">Nhân sự & Món ăn <i class="mdi mdi-food mdi-24px float-right"></i></h4>
+                  <h3 class="mb-2" id="totalProductsCount">0 món</h3>
+                  <h6 class="card-text" id="totalStaffCount">0 nhân sự</h6>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Quick Navigation Cards -->
+          <div class="row mb-4">
+            <div class="col-12">
+              <div class="card">
+                <div class="card-body">
+                  <h4 class="card-title mb-4">Chức năng quản lý nhanh</h4>
+                  <div class="row">
+                    <div class="col-md-3 col-sm-6 mb-3 d-flex">
+                      <div class="card border border-primary text-center p-3 cursor-pointer w-100 h-100 d-flex flex-column justify-content-center align-items-center shadow-sm" style="min-height: 150px; transition: transform 0.2s, box-shadow 0.2s;" onmouseover="this.style.transform='translateY(-3px)'" onmouseout="this.style.transform='none'" onclick="showTab('users')">
+                        <div class="d-flex align-items-center justify-content-center mb-2" style="height: 48px;">
+                          <i class="mdi mdi-account-group mdi-36px text-primary"></i>
+                        </div>
+                        <h5 class="font-weight-bold mb-1" style="font-size: 1.05rem;">Tài khoản & Nhân viên</h5>
+                        <p class="text-muted text-small mb-0">Cấp tài khoản & phân quyền</p>
+                      </div>
+                    </div>
+                    <div class="col-md-3 col-sm-6 mb-3 d-flex">
+                      <div class="card border border-danger text-center p-3 cursor-pointer w-100 h-100 d-flex flex-column justify-content-center align-items-center shadow-sm" style="min-height: 150px; transition: transform 0.2s, box-shadow 0.2s;" onmouseover="this.style.transform='translateY(-3px)'" onmouseout="this.style.transform='none'" onclick="showTab('products')">
+                        <div class="d-flex align-items-center justify-content-center mb-2" style="height: 48px;">
+                          <i class="mdi mdi-food mdi-36px text-danger"></i>
+                        </div>
+                        <h5 class="font-weight-bold mb-1" style="font-size: 1.05rem;">Món ăn & Thực đơn</h5>
+                        <p class="text-muted text-small mb-0">Quản lý thực đơn nhà hàng</p>
+                      </div>
+                    </div>
+                    <div class="col-md-3 col-sm-6 mb-3 d-flex">
+                      <div class="card border border-success text-center p-3 cursor-pointer w-100 h-100 d-flex flex-column justify-content-center align-items-center shadow-sm" style="min-height: 150px; transition: transform 0.2s, box-shadow 0.2s;" onmouseover="this.style.transform='translateY(-3px)'" onmouseout="this.style.transform='none'" onclick="showTab('tables')">
+                        <div class="d-flex align-items-center justify-content-center mb-2" style="height: 48px;">
+                          <i class="mdi mdi-silverware-fork-knife mdi-36px text-success"></i>
+                        </div>
+                        <h5 class="font-weight-bold mb-1" style="font-size: 1.05rem;">Quản lý Bàn ăn</h5>
+                        <p class="text-muted text-small mb-0">Sơ đồ & Trạng thái bàn</p>
+                      </div>
+                    </div>
+                    <div class="col-md-3 col-sm-6 mb-3 d-flex">
+                      <div class="card border border-info text-center p-3 cursor-pointer w-100 h-100 d-flex flex-column justify-content-center align-items-center shadow-sm" style="min-height: 150px; transition: transform 0.2s, box-shadow 0.2s;" onmouseover="this.style.transform='translateY(-3px)'" onmouseout="this.style.transform='none'" onclick="showTab('invoices')">
+                        <div class="d-flex align-items-center justify-content-center mb-2" style="height: 48px;">
+                          <i class="mdi mdi-receipt mdi-36px text-info"></i>
+                        </div>
+                        <h5 class="font-weight-bold mb-1" style="font-size: 1.05rem;">Hóa đơn & Thanh toán</h5>
+                        <p class="text-muted text-small mb-0">Xử lý thu tiền & giảm giá</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Recent Orders -->
+          <div class="row">
+            <div class="col-12 grid-margin">
+              <div class="card">
+                <div class="card-body">
+                  <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h4 class="card-title mb-0">Đơn hàng mới nhất</h4>
+                    <button class="btn btn-gradient-primary btn-sm" onclick="showTab('orders')">Xem tất cả đơn</button>
+                  </div>
+                  <div class="table-responsive">
+                    <table class="table table-hover">
+                      <thead>
+                        <tr>
+                          <th>Mã đơn</th>
+                          <th>Bàn</th>
+                          <th>Nhân viên</th>
+                          <th>Tổng tiền</th>
+                          <th>Trạng thái</th>
+                          <th>Thời gian</th>
+                        </tr>
+                      </thead>
+                      <tbody id="recentOrders">
+                        <tr><td colspan="6" class="text-center text-muted">Đang tải dữ liệu...</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ========================================================= -->
+        <!-- TAB 2: USER MANAGEMENT -->
+        <!-- ========================================================= -->
+        <div id="tab-users" class="tab-content-section d-none">
+          <div class="page-header">
+            <h3 class="page-title">
+              <span class="page-title-icon bg-gradient-primary text-white me-2">
+                <i class="mdi mdi-account-group"></i>
+              </span>
+              Quản Lý Tài Khoản & Nhân Viên
+            </h3>
+            <button class="btn btn-gradient-primary btn-sm" data-bs-toggle="modal" data-bs-target="#createUserModal">
+              <i class="mdi mdi-account-plus"></i> Tạo tài khoản mới
+            </button>
+          </div>
+
+          <div class="card">
+            <div class="card-body">
+              <div class="row mb-3 align-items-center">
+                <div class="col-md-4">
+                  <select id="userRoleFilter" class="form-select form-control" onchange="filterUsersByRole(true)">
+                    <option value="">-- Tất cả vai trò (Roles) --</option>
+                    <option value="ADMIN">ADMIN (Quản trị viên)</option>
+                    <option value="STAFF">STAFF (Nhân viên phục vụ)</option>
+                    <option value="CASHIER">CASHIER (Thu ngân)</option>
+                    <option value="KITCHEN">KITCHEN (Đầu bếp)</option>
+                    <option value="USER">USER (Khách hàng)</option>
+                  </select>
+                </div>
+                <div class="col-md-8 text-end">
+                  <button class="btn btn-outline-secondary btn-sm" onclick="loadUsers()">
+                    <i class="mdi mdi-refresh"></i> Tải lại
+                  </button>
+                </div>
+              </div>
+
+              <div class="table-responsive">
+                <table class="table table-striped">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Họ tên</th>
+                      <th>Email</th>
+                      <th>Số điện thoại</th>
+                      <th>Vai trò</th>
+                      <th>Trạng thái</th>
+                      <th>Thao tác</th>
+                    </tr>
+                  </thead>
+                  <tbody id="usersTableBody">
+                    <tr><td colspan="7" class="text-center text-muted">Đang tải tài khoản...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div id="usersPagination"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ========================================================= -->
+        <!-- TAB 3: CATEGORIES MANAGEMENT -->
+        <!-- ========================================================= -->
+        <div id="tab-categories" class="tab-content-section d-none">
+          <div class="page-header">
+            <h3 class="page-title">
+              <span class="page-title-icon bg-gradient-primary text-white me-2">
+                <i class="mdi mdi-shape-plus"></i>
+              </span>
+              Quản Lý Danh Mục Món Ăn
+            </h3>
+            <button class="btn btn-gradient-primary btn-sm" onclick="openAddCategoryModal()">
+              <i class="mdi mdi-plus"></i> Thêm danh mục
+            </button>
+          </div>
+
+          <div class="card">
+            <div class="card-body">
+              <div class="table-responsive">
+                <table class="table table-hover">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Tên danh mục</th>
+                      <th>Mô tả</th>
+                      <th>Thao tác</th>
+                    </tr>
+                  </thead>
+                  <tbody id="categoriesTableBody">
+                    <tr><td colspan="4" class="text-center text-muted">Đang tải danh mục...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div id="categoriesPagination"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ========================================================= -->
+        <!-- TAB 4: PRODUCTS / MENU MANAGEMENT -->
+        <!-- ========================================================= -->
+        <div id="tab-products" class="tab-content-section d-none">
+          <div class="page-header">
+            <h3 class="page-title">
+              <span class="page-title-icon bg-gradient-primary text-white me-2">
+                <i class="mdi mdi-food"></i>
+              </span>
+              Quản Lý Thực Đơn & Món Ăn
+            </h3>
+            <button class="btn btn-gradient-primary btn-sm" onclick="openAddProductModal()">
+              <i class="mdi mdi-food-fork-drink"></i> Thêm món ăn mới
+            </button>
+          </div>
+
+          <div class="card">
+            <div class="card-body">
+              <div class="row mb-3">
+                <div class="col-md-4 mb-2">
+                  <select id="productCategoryFilter" class="form-select form-control" onchange="filterProducts(true)">
+                    <option value="">Tất cả danh mục</option>
+                  </select>
+                </div>
+                <div class="col-md-5 mb-2">
+                  <input type="text" id="productSearchInput" class="form-control" placeholder="Tìm kiếm tên món ăn..." onkeyup="filterProducts(true)">
+                </div>
+                <div class="col-md-3 mb-2 text-end">
+                  <button class="btn btn-outline-secondary btn-sm" onclick="loadProducts()">
+                    <i class="mdi mdi-refresh"></i> Làm mới
+                  </button>
+                </div>
+              </div>
+
+              <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Hình ảnh</th>
+                      <th>Tên món ăn</th>
+                      <th>Danh mục</th>
+                      <th>Đơn giá</th>
+                      <th>Trạng thái</th>
+                      <th>Thao tác</th>
+                    </tr>
+                  </thead>
+                  <tbody id="productsTableBody">
+                    <tr><td colspan="7" class="text-center text-muted">Đang tải danh sách món ăn...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div id="productsPagination"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ========================================================= -->
+        <!-- TAB 5: TABLES MANAGEMENT -->
+        <!-- ========================================================= -->
+        <div id="tab-tables" class="tab-content-section d-none">
+          <div class="page-header">
+            <h3 class="page-title">
+              <span class="page-title-icon bg-gradient-primary text-white me-2">
+                <i class="mdi mdi-table-chair"></i>
+              </span>
+              Quản Lý Bàn Ăn & Sơ Đồ Phục Vụ
+            </h3>
+            <button class="btn btn-gradient-primary btn-sm" onclick="openAddTableModal()">
+              <i class="mdi mdi-plus"></i> Thêm bàn ăn
+            </button>
+          </div>
+
+          <!-- Tables Visual Grid -->
+          <div class="row mb-4" id="tablesGridContainer">
+            <!-- Dynamic Tables Cards -->
+          </div>
+
+          <!-- Tables Table View -->
+          <div class="card">
+            <div class="card-body">
+              <h4 class="card-title">Danh sách chi tiết bàn ăn</h4>
+              <div class="table-responsive">
+                <table class="table table-striped">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Tên/Số bàn</th>
+                      <th>Sức chứa</th>
+                      <th>Trạng thái</th>
+                      <th>Thao tác</th>
+                    </tr>
+                  </thead>
+                  <tbody id="tablesTableBody">
+                    <tr><td colspan="5" class="text-center text-muted">Đang tải danh sách bàn...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div id="tablesPagination"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ========================================================= -->
+        <!-- TAB 6: ORDERS MANAGEMENT -->
+        <!-- ========================================================= -->
+        <div id="tab-orders" class="tab-content-section d-none">
+          <div class="page-header">
+            <h3 class="page-title">
+              <span class="page-title-icon bg-gradient-primary text-white me-2">
+                <i class="mdi mdi-cart-outline"></i>
+              </span>
+              Quản Lý Đơn Hàng & Gọi Món
+            </h3>
+            <button class="btn btn-outline-secondary btn-sm" onclick="loadOrders()">
+              <i class="mdi mdi-refresh"></i> Tải lại
+            </button>
+          </div>
+
+          <div class="card">
+            <div class="card-body">
+              <div class="row mb-3">
+                <div class="col-md-3">
+                  <select id="orderStatusFilter" class="form-select form-control">
+                    <option value="">-- Tất cả trạng thái đơn --</option>
+                    <option value="PENDING">PENDING (Chờ xử lý)</option>
+                    <option value="PROCESSING">PROCESSING (Đang chế biến)</option>
+                    <option value="SERVED">SERVED (Đã lên món)</option>
+                    <option value="COMPLETED">COMPLETED (Hoàn thành)</option>
+                    <option value="CANCELLED">CANCELLED (Đã hủy)</option>
+                  </select>
+                </div>
+                <div class="col-md-3">
+                  <input type="date" id="orderDateFrom" class="form-control" placeholder="Từ ngày">
+                </div>
+                <div class="col-md-3">
+                  <input type="date" id="orderDateTo" class="form-control" placeholder="Đến ngày">
+                </div>
+                <div class="col-md-3">
+                  <button class="btn btn-primary w-100" onclick="filterOrders(true)">Lọc & Tìm kiếm</button>
+                </div>
+              </div>
+              <div id="ordersSummaryBadge" class="mb-3 p-2 bg-light rounded d-flex justify-content-between align-items-center" style="font-size: 13.5px;">
+                <span><i class="mdi mdi-information-outline text-primary"></i> Đang tải dữ liệu đơn hàng...</span>
+              </div>
+
+              <div class="table-responsive">
+                <table class="table table-hover">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Mã đơn hàng</th>
+                      <th>Vị trí bàn</th>
+                      <th>Nhân viên order</th>
+                      <th>Tổng tiền</th>
+                      <th>Trạng thái</th>
+                      <th>Thời gian tạo</th>
+                      <th>Thao tác</th>
+                    </tr>
+                  </thead>
+                  <tbody id="ordersTableBody">
+                    <tr><td colspan="8" class="text-center text-muted">Đang tải danh sách đơn hàng...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div id="ordersPagination"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ========================================================= -->
+        <!-- TAB 7: INVOICES MANAGEMENT -->
+        <!-- ========================================================= -->
+        <div id="tab-invoices" class="tab-content-section d-none">
+          <div class="page-header">
+            <h3 class="page-title">
+              <span class="page-title-icon bg-gradient-primary text-white me-2">
+                <i class="mdi mdi-receipt-text"></i>
+              </span>
+              Quản Lý Hóa Đơn & Thanh Toán
+            </h3>
+            <button class="btn btn-outline-secondary btn-sm" onclick="loadInvoices()">
+              <i class="mdi mdi-refresh"></i> Tải lại
+            </button>
+          </div>
+
+          <div class="card">
+            <div class="card-body">
+              <div class="row mb-3">
+                <div class="col-md-3">
+                  <select id="invoiceStatusFilter" class="form-select form-control">
+                    <option value="">-- Tất cả trạng thái --</option>
+                    <option value="PAID">Đã thanh toán (PAID)</option>
+                    <option value="PENDING">Chưa thanh toán (PENDING)</option>
+                    <option value="CANCELLED">Đã hủy (CANCELLED)</option>
+                  </select>
+                </div>
+                <div class="col-md-3">
+                  <input type="date" id="invoiceDateFrom" class="form-control" placeholder="Từ ngày">
+                </div>
+                <div class="col-md-3">
+                  <input type="date" id="invoiceDateTo" class="form-control" placeholder="Đến ngày">
+                </div>
+                <div class="col-md-3">
+                  <button class="btn btn-primary w-100" onclick="filterInvoices(true)">Lọc & Tìm kiếm</button>
+                </div>
+              </div>
+              <div id="invoicesSummaryBadge" class="mb-3 p-2 bg-light rounded d-flex justify-content-between align-items-center" style="font-size: 13.5px;">
+                <span><i class="mdi mdi-information-outline text-info"></i> Đang tải dữ liệu hóa đơn...</span>
+              </div>
+              <div class="table-responsive">
+                <table class="table table-hover">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Mã Hóa đơn</th>
+                      <th>Mã Đơn hàng</th>
+                      <th>Tổng ban đầu</th>
+                      <th>Giảm giá</th>
+                      <th>Thực thu</th>
+                      <th>Trạng thái</th>
+                      <th>Thao tác</th>
+                    </tr>
+                  </thead>
+                  <tbody id="invoicesTableBody">
+                    <tr><td colspan="8" class="text-center text-muted">Đang tải danh sách hóa đơn...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div id="invoicesPagination"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ========================================================= -->
+        <!-- TAB 8: REPORTS & REVENUE (FULL BACKEND DTO SUPPORT) -->
+        <!-- ========================================================= -->
+        <div id="tab-reports" class="tab-content-section d-none">
+          <div class="page-header">
+            <h3 class="page-title">
+              <span class="page-title-icon bg-gradient-primary text-white me-2">
+                <i class="mdi mdi-chart-line"></i>
+              </span>
+              Báo Cáo & Thống Kê Doanh Thu Toàn Diện
+            </h3>
+          </div>
+
+          <!-- Date Filter Box -->
+          <div class="card mb-4">
+            <div class="card-body">
+              <h4 class="card-title mb-3">Lọc báo cáo theo khoảng thời gian</h4>
+              <div class="row align-items-end">
+                <div class="col-md-4 mb-2">
+                  <label for="reportFromDate" class="font-weight-bold">Từ ngày:</label>
+                  <input type="date" id="reportFromDate" class="form-control">
+                </div>
+                <div class="col-md-4 mb-2">
+                  <label for="reportToDate" class="font-weight-bold">Đến ngày:</label>
+                  <input type="date" id="reportToDate" class="form-control">
+                </div>
+                <div class="col-md-4 mb-2 d-flex gap-2">
+                  <button class="btn btn-gradient-primary flex-grow-1" onclick="handleFetchReport(true)">
+                    <i class="mdi mdi-magnify me-1"></i> Xem báo cáo
+                  </button>
+                  <button class="btn btn-outline-info" onclick="printReport()">
+                    <i class="mdi mdi-printer"></i> In 
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 5 Revenue Summary KPI Cards -->
+          <div class="row mb-4">
+            <div class="col-md mb-3">
+              <div class="card bg-gradient-danger text-white h-100">
+                <div class="card-body text-center p-3">
+                  <i class="mdi mdi-cash-multiple mdi-36px mb-1"></i>
+                  <h6 class="text-white mb-1">TỔNG DOANH THU</h6>
+                  <h3 class="font-weight-bold my-2" id="reportTotalRevenue">0 ₫</h3>
+                  <small>Hóa đơn hoàn tất</small>
+                </div>
+              </div>
+            </div>
+
+            <div class="col-md mb-3">
+              <div class="card bg-gradient-info text-white h-100">
+                <div class="card-body text-center p-3">
+                  <i class="mdi mdi-receipt-text mdi-36px mb-1"></i>
+                  <h6 class="text-white mb-1">SỐ HÓA ĐƠN</h6>
+                  <h3 class="font-weight-bold my-2" id="reportTotalInvoices">0</h3>
+                  <small>Đã thanh toán</small>
+                </div>
+              </div>
+            </div>
+
+            <div class="col-md mb-3">
+              <div class="card bg-gradient-success text-white h-100">
+                <div class="card-body text-center p-3">
+                  <i class="mdi mdi-calculator mdi-36px mb-1"></i>
+                  <h6 class="text-white mb-1">TRUNG BÌNH/HÓA ĐƠN</h6>
+                  <h3 class="font-weight-bold my-2" id="reportAverageInvoice">0 ₫</h3>
+                  <small>Giá trị TB</small>
+                </div>
+              </div>
+            </div>
+
+            <div class="col-md mb-3">
+              <div class="card bg-gradient-primary text-white h-100">
+                <div class="card-body text-center p-3">
+                  <i class="mdi mdi-food mdi-36px mb-1"></i>
+                  <h6 class="text-white mb-1">TỔNG MÓN ĐÃ BÁN</h6>
+                  <h3 class="font-weight-bold my-2" id="reportTotalItemsSold">0</h3>
+                  <small>Phần/Suất ăn</small>
+                </div>
+              </div>
+            </div>
+
+            <div class="col-md mb-3">
+              <div class="card bg-gradient-warning text-dark h-100">
+                <div class="card-body text-center p-3">
+                  <i class="mdi mdi-crown mdi-36px mb-1 text-dark"></i>
+                  <h6 class="text-dark mb-1">MÓN BÁN CHẠY NHẤT</h6>
+                  <h4 class="font-weight-bold my-1 text-truncate" id="reportBestSellerName">-</h4>
+                  <small id="reportBestSellerStats">0 suất</small>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Revenue Breakdown Tables -->
+          <div class="row">
+            <!-- Revenue By Date -->
+            <div class="col-md-4 grid-margin stretch-card">
+              <div class="card">
+                <div class="card-body">
+                  <h4 class="card-title text-primary"><i class="mdi mdi-calendar-clock me-2"></i>Doanh thu theo ngày</h4>
+                  <div class="table-responsive" style="max-height: 350px; overflow-y: auto;">
+                    <table class="table table-hover">
+                      <thead class="table-light">
+                        <tr>
+                          <th>#</th>
+                          <th>Ngày</th>
+                          <th class="text-center">Số HĐ</th>
+                          <th class="text-end">Doanh thu</th>
+                        </tr>
+                      </thead>
+                      <tbody id="reportRevenueByDateBody">
+                        <tr><td colspan="4" class="text-center text-muted">Đang tải...</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Revenue By Staff / Cashier -->
+            <div class="col-md-4 grid-margin stretch-card">
+              <div class="card">
+                <div class="card-body">
+                  <h4 class="card-title text-info"><i class="mdi mdi-account-cash me-2"></i>Doanh thu theo nhân viên</h4>
+                  <div class="table-responsive" style="max-height: 350px; overflow-y: auto;">
+                    <table class="table table-hover">
+                      <thead class="table-light">
+                        <tr>
+                          <th>#</th>
+                          <th>Nhân viên</th>
+                          <th class="text-center">Số đơn</th>
+                          <th class="text-end">Doanh số</th>
+                        </tr>
+                      </thead>
+                      <tbody id="reportRevenueByStaffBody">
+                        <tr><td colspan="4" class="text-center text-muted">Đang tải...</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Revenue By Payment Method -->
+            <div class="col-md-4 grid-margin stretch-card">
+              <div class="card">
+                <div class="card-body">
+                  <h4 class="card-title text-success"><i class="mdi mdi-credit-card-settings me-2"></i>Theo PTTT</h4>
+                  <div class="table-responsive" style="max-height: 350px; overflow-y: auto;">
+                    <table class="table table-hover">
+                      <thead class="table-light">
+                        <tr>
+                          <th>#</th>
+                          <th>Hình thức</th>
+                          <th class="text-center">Lượt</th>
+                          <th class="text-end">Tổng tiền</th>
+                        </tr>
+                      </thead>
+                      <tbody id="reportRevenueByPaymentBody">
+                        <tr><td colspan="4" class="text-center text-muted">Đang tải...</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Items Sales Breakdown -->
+          <div class="row">
+            <div class="col-12 grid-margin stretch-card">
+              <div class="card">
+                <div class="card-body">
+                  <h4 class="card-title text-danger"><i class="mdi mdi-silverware-fork-knife me-2"></i>Thống kê chi tiết món ăn đã bán</h4>
+                  <div class="table-responsive">
+                    <table class="table table-striped table-hover">
+                      <thead class="table-dark">
+                        <tr>
+                          <th>#</th>
+                          <th>Tên món ăn</th>
+                          <th class="text-center">Số lượng bán</th>
+                          <th class="text-end">Đơn giá ước tính</th>
+                          <th class="text-end">Tổng doanh thu món</th>
+                        </tr>
+                      </thead>
+                      <tbody id="reportItemsBreakdownBody">
+                        <tr><td colspan="5" class="text-center text-muted">Đang tải chi tiết món bán...</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- FOOTER -->
+      <footer class="footer">
+        <div class="container-fluid d-flex justify-content-between">
+          <span class="text-muted">© 2026 Hệ Thống Quản Lý Nhà Hàng Thanh Hóa</span>
+          <span class="text-muted">Admin Dashboard Version 2.0</span>
+        </div>
+      </footer>
+    </div>
+  </div>
+</div>
+
+<!-- ========================================================= -->
+<!-- MODALS SECTION -->
+<!-- ========================================================= -->
+
+<!-- 1. Modal Create User -->
+<div class="modal fade" id="createUserModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form onsubmit="handleCreateUser(event)">
+        <div class="modal-header bg-gradient-primary text-white">
+          <h5 class="modal-title text-white">Tạo tài khoản / Nhân viên mới</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">Họ và tên <span class="text-danger">*</span></label>
+            <input type="text" name="fullName" class="form-control" placeholder="Nhập họ tên" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Email <span class="text-danger">*</span></label>
+            <input type="email" name="email" class="form-control" placeholder="Nhập email" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Số điện thoại</label>
+            <input type="text" name="phone" class="form-control" placeholder="Nhập số điện thoại">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Mật khẩu <span class="text-danger">*</span></label>
+            <input type="password" name="password" class="form-control" placeholder="Nhập mật khẩu" required minlength="6">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Phân quyền (Role) <span class="text-danger">*</span></label>
+            <select name="role" class="form-select form-control" required>
+              <option value="STAFF">STAFF (Nhân viên phục vụ)</option>
+              <option value="CASHIER">CASHIER (Thu ngân)</option>
+              <option value="KITCHEN">KITCHEN (Đầu bếp)</option>
+              <option value="ADMIN">ADMIN (Quản trị viên)</option>
+              <option value="USER">USER (Khách hàng)</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+          <button type="submit" class="btn btn-gradient-primary">Tạo tài khoản</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- 2. Modal Category -->
+<div class="modal fade" id="categoryModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form id="categoryForm" onsubmit="handleSaveCategory(event)">
+        <input type="hidden" id="categoryId">
+        <div class="modal-header bg-gradient-primary text-white">
+          <h5 class="modal-title text-white" id="categoryModalTitle">Thêm danh mục</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">Tên danh mục <span class="text-danger">*</span></label>
+            <input type="text" id="categoryName" class="form-control" placeholder="Ví dụ: Lẩu & Nướng, Trái cây..." required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Mô tả</label>
+            <textarea id="categoryDescription" class="form-control" rows="3" placeholder="Nhập mô tả danh mục"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+          <button type="submit" class="btn btn-gradient-primary">Lưu danh mục</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- 3. Modal Product -->
+<div class="modal fade" id="productModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form id="productForm" onsubmit="handleSaveProduct(event)">
+        <input type="hidden" id="productId">
+        <div class="modal-header bg-gradient-primary text-white">
+          <h5 class="modal-title text-white" id="productModalTitle">Thêm món ăn</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">Tên món ăn <span class="text-danger">*</span></label>
+            <input type="text" id="productName" class="form-control" placeholder="Nhập tên món" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Danh mục <span class="text-danger">*</span></label>
+            <select id="productCategorySelect" class="form-select form-control" required>
+              <!-- Dynamic options -->
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Đơn giá (VNĐ) <span class="text-danger">*</span></label>
+            <input type="number" id="productPrice" class="form-control" placeholder="Ví dụ: 150000" required min="0">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Trạng thái món <span class="text-danger">*</span></label>
+            <select id="productStatusSelect" class="form-select form-control" required>
+              <option value="AVAILABLE">Đang bán (AVAILABLE)</option>
+              <option value="OUT_OF_STOCK">Hết hàng (OUT_OF_STOCK)</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Mô tả món ăn</label>
+            <textarea id="productDescription" class="form-control" rows="2" placeholder="Nhập thành phần, nguyên liệu..."></textarea>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Hình ảnh món ăn</label>
+            <input type="file" id="productImageInput" class="form-control" accept="image/*">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+          <button type="submit" class="btn btn-gradient-primary">Lưu món ăn</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- 4. Modal Table -->
+<div class="modal fade" id="tableModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form id="tableForm" onsubmit="handleCreateTable(event)">
+        <div class="modal-header bg-gradient-primary text-white">
+          <h5 class="modal-title text-white">Thêm bàn ăn mới</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">Số bàn / Tên bàn <span class="text-danger">*</span></label>
+            <input type="number" id="tableNumber" class="form-control" placeholder="Ví dụ: 1, 2, 10" required min="1">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Sức chứa (Số ghế) <span class="text-danger">*</span></label>
+            <input type="number" id="tableCapacity" class="form-control" value="4" required min="1">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Trạng thái <span class="text-danger">*</span></label>
+            <select id="tableStatus" class="form-select form-control" required>
+              <option value="AVAILABLE">AVAILABLE (Trống)</option>
+              <option value="OCCUPIED">OCCUPIED (Có khách)</option>
+              <option value="RESERVED">RESERVED (Đã đặt)</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+          <button type="submit" class="btn btn-gradient-primary">Tạo bàn mới</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- 5. Modal Order Details -->
+<div class="modal fade" id="orderDetailsModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header bg-gradient-primary text-white">
+        <h5 class="modal-title text-white">Chi Tiết Đơn Hàng #<span id="modalOrderCode">-</span></h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row mb-3 p-3 bg-light rounded border">
+          <div class="col-md-3"><strong>Vị trí bàn:</strong> <br><span id="modalOrderTable" class="text-primary font-weight-bold">-</span></div>
+          <div class="col-md-3"><strong>Người tạo/Khách:</strong> <br><span id="modalOrderUser">-</span></div>
+          <div class="col-md-3"><strong>Trạng thái:</strong> <br><span id="modalOrderStatus" class="badge bg-info text-dark">-</span></div>
+          <div class="col-md-3"><strong>Thời gian tạo:</strong> <br><span id="modalOrderDate" class="text-muted text-small">-</span></div>
+        </div>
+        <h5 class="mb-2">Danh sách món đã gọi:</h5>
+        <div class="table-responsive">
+          <table class="table table-bordered table-striped">
+            <thead class="table-dark">
+              <tr>
+                <th>#</th>
+                <th>Tên món ăn</th>
+                <th class="text-end">Đơn giá</th>
+                <th class="text-center">Số lượng</th>
+                <th class="text-end">Thành tiền</th>
+              </tr>
+            </thead>
+            <tbody id="modalOrderItemsBody">
+              <tr><td colspan="5" class="text-center text-muted">Đang tải chi tiết món...</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="text-end mt-3">
+          <h4 class="text-dark">Tổng tiền đơn hàng: <span id="modalOrderTotal" class="text-success font-weight-bold">0 ₫</span></h4>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Đóng</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 6. Modal Invoice Details & Print Receipt -->
+<div class="modal fade" id="invoiceDetailsModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header bg-gradient-success text-white">
+        <h5 class="modal-title text-white">Chi Tiết Hóa Đơn #<span id="modalInvoiceCode">-</span></h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="invoicePrintArea">
+        <div class="row mb-3 p-3 bg-light rounded border">
+          <div class="col-md-6 mb-2">
+            <p class="mb-1"><strong>Mã Hóa đơn:</strong> #<span id="modalInvoiceCode">-</span></p>
+            <p class="mb-1"><strong>Mã Đơn hàng:</strong> #<span id="modalInvoiceOrderCode">-</span></p>
+            <p class="mb-1"><strong>Khách hàng:</strong> <span id="modalInvoiceCustomer">-</span></p>
+            <p class="mb-0"><strong>Nhân viên phụ trách:</strong> <span id="modalInvoiceStaff" class="text-primary font-weight-bold">-</span></p>
+          </div>
+          <div class="col-md-6 mb-2">
+            <p class="mb-1"><strong>Vị trí bàn:</strong> <span id="modalInvoiceTable">-</span></p>
+            <p class="mb-1"><strong>Thời gian xuất:</strong> <span id="modalInvoiceDate">-</span></p>
+            <p class="mb-1"><strong>Phương thức:</strong> <span id="modalInvoicePaymentMethod" class="badge bg-light text-dark border">-</span></p>
+            <p class="mb-0"><strong>Trạng thái:</strong> <span id="modalInvoiceStatus" class="badge bg-success">Đã thanh toán</span></p>
+          </div>
+        </div>
+
+        <h5 class="mb-2">Chi tiết sản phẩm dịch vụ:</h5>
+        <div class="table-responsive">
+          <table class="table table-bordered table-striped">
+            <thead class="table-secondary">
+              <tr>
+                <th>#</th>
+                <th>Tên món ăn</th>
+                <th class="text-end">Đơn giá</th>
+                <th class="text-center">Số lượng</th>
+                <th class="text-end">Thành tiền</th>
+              </tr>
+            </thead>
+            <tbody id="modalInvoiceItemsBody">
+              <tr><td colspan="5" class="text-center text-muted">Đang tải chi tiết hóa đơn...</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="row justify-content-end mt-3">
+          <div class="col-md-6">
+            <table class="table table-borderless">
+              <tr>
+                <td>Tạm tính (Subtotal):</td>
+                <td class="text-end font-weight-bold" id="modalInvoiceSubtotal">0 ₫</td>
+              </tr>
+              <tr>
+                <td>Giảm giá (Discount):</td>
+                <td class="text-end text-danger font-weight-bold" id="modalInvoiceDiscount">0 ₫</td>
+              </tr>
+              <tr class="border-top">
+                <td><h4 class="mb-0">THỰC THU:</h4></td>
+                <td class="text-end"><h3 class="text-success font-weight-bold mb-0" id="modalInvoiceFinalTotal">0 ₫</h3></td>
+              </tr>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-primary" id="printInvoiceBtn">
+          <i class="mdi mdi-printer me-1"></i> In Hóa Đơn
+        </button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Đóng</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 7. Modal Discount -->
+<div class="modal fade" id="discountModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form onsubmit="handleApplyDiscount(event)">
+        <input type="hidden" id="discountInvoiceId">
+        <div class="modal-header bg-gradient-primary text-white">
+          <h5 class="modal-title text-white">Áp dụng giảm giá hóa đơn</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">Phần trăm giảm giá (%) <span class="text-danger">*</span></label>
+            <input type="number" id="discountPercent" class="form-control" placeholder="Ví dụ: 10, 20" required min="0" max="100">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+          <button type="submit" class="btn btn-gradient-primary">Áp dụng giảm giá</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- ================= JS SCRIPTS ================= -->
+<script src="assets/vendors/js/vendor.bundle.base.js"></script>
+<script src="assets/js/off-canvas.js"></script>
+<script src="assets/js/hoverable-collapse.js"></script>
+<script src="assets/js/misc.js"></script>
+<!-- Admin App JavaScript -->
+<script src="assets/js/admin-app.js"></script>
+
+</body>
+</html>

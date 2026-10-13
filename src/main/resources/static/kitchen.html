@@ -1,0 +1,941 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <title>Màn Hình Bếp (KDS) - Nhà Hàng Thanh Hóa</title>
+    <script>
+        (function() {
+            try {
+                const path = window.location.pathname;
+                if (path.endsWith('.html')) {
+                    let clean = path.replace(/\.html$/, '');
+                    window.history.replaceState(null, '', clean + window.location.search + window.location.hash);
+                }
+            } catch(e) {}
+        })();
+    </script>
+    <!-- Fonts & Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
+
+    <style>
+        :root {
+            --kds-bg: #18191a;
+            --kds-card-bg: #242526;
+            --kds-header: #242526;
+            --kds-primary: #ff9800;
+            --kds-green: #2ecc71;
+            --kds-blue: #3498db;
+            --kds-red: #e74c3c;
+            --text-light: #f0f2f5;
+            --text-muted: #b0b3b8;
+        }
+
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            font-family: 'Roboto', sans-serif;
+            background-color: var(--kds-bg);
+            color: var(--text-light);
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* HEADER */
+        .kds-header {
+            height: 56px;
+            background-color: var(--kds-header);
+            border-bottom: 2px solid #3a3b3c;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+            flex-shrink: 0;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+        }
+
+        .header-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 20px;
+            font-weight: 900;
+            color: var(--kds-primary);
+            letter-spacing: 0.5px;
+        }
+
+        .header-brand i {
+            font-size: 24px;
+        }
+
+        .header-stats {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .stat-pill {
+            background-color: #3a3b3c;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .stat-pill.active {
+            background-color: #ff9800;
+            color: #000;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .btn-kds-header {
+            background-color: #3a3b3c;
+            color: #fff;
+            border: 1px solid #4e4f50;
+            padding: 6px 14px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .btn-kds-header:hover {
+            background-color: #4e4f50;
+        }
+
+        /* KDS ORDERS GRID CONTAINER */
+        .kds-container {
+            flex: 1;
+            padding: 16px;
+            overflow-x: auto;
+            overflow-y: hidden;
+            display: flex;
+            gap: 16px;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .kds-container::-webkit-scrollbar {
+            height: 8px;
+        }
+        .kds-container::-webkit-scrollbar-thumb {
+            background: #555;
+            border-radius: 4px;
+        }
+
+        /* KDS TICKET CARD */
+        .kds-ticket {
+            width: 320px;
+            min-width: 320px;
+            background-color: var(--kds-card-bg);
+            border-radius: 12px;
+            border: 2px solid #3a3b3c;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            overflow: hidden;
+            transition: transform 0.2s;
+        }
+
+        .kds-ticket.processing {
+            border-color: #ff9800;
+        }
+
+        .kds-ticket.pending {
+            border-color: #3498db;
+        }
+
+        .kds-ticket-header {
+            padding: 12px 14px;
+            background-color: #2f3032;
+            border-bottom: 2px solid #3a3b3c;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .ticket-table-name {
+            font-size: 20px;
+            font-weight: 900;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .ticket-time-tag {
+            font-size: 12px;
+            color: #ffc107;
+            font-weight: 700;
+            background: rgba(255, 193, 7, 0.15);
+            padding: 3px 8px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .ticket-meta {
+            padding: 6px 14px;
+            background: #202122;
+            font-size: 12px;
+            color: var(--text-muted);
+            display: flex;
+            justify-content: space-between;
+            border-bottom: 1px solid #333;
+        }
+
+        /* TICKET ITEMS BODY */
+        .ticket-items-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px 14px;
+            max-height: calc(100vh - 240px);
+        }
+
+        .ticket-items-body::-webkit-scrollbar {
+            width: 4px;
+        }
+        .ticket-items-body::-webkit-scrollbar-thumb {
+            background: #444;
+            border-radius: 2px;
+        }
+
+        .ticket-item-row {
+            padding: 8px 0;
+            border-bottom: 1px dashed #3a3b3c;
+        }
+
+        .ticket-item-row:last-child {
+            border-bottom: none;
+        }
+
+        .item-main-line {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .item-name {
+            font-size: 16px;
+            font-weight: 700;
+            color: #fff;
+            line-height: 1.25;
+            flex: 1;
+            padding-right: 8px;
+        }
+
+        .item-qty {
+            font-size: 18px;
+            font-weight: 900;
+            color: #ff9800;
+            background: #332b20;
+            padding: 2px 10px;
+            border-radius: 6px;
+            border: 1px solid #ff9800;
+        }
+
+        .item-note {
+            font-size: 12px;
+            color: #ff6b6b;
+            font-style: italic;
+            margin-top: 4px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        /* TICKET FOOTER ACTIONS */
+        .ticket-footer {
+            padding: 12px 14px;
+            background-color: #202122;
+            border-top: 2px solid #3a3b3c;
+            display: flex;
+            gap: 8px;
+        }
+
+        .btn-ticket-print {
+            background-color: #3a3b3c;
+            color: #fff;
+            border: 1px solid #555;
+            height: 42px;
+            padding: 0 12px;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .btn-ticket-served {
+            flex: 1;
+            background-color: var(--kds-green);
+            color: #fff;
+            border: none;
+            height: 42px;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 900;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            box-shadow: 0 2px 8px rgba(46, 204, 113, 0.4);
+            transition: all 0.2s;
+        }
+
+        .btn-ticket-served:active {
+            transform: scale(0.97);
+            background-color: #27ae60;
+        }
+
+        .btn-ticket-preparing {
+            flex: 1;
+            background-color: #f39c12;
+            color: #fff;
+            border: none;
+            height: 42px;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 900;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            box-shadow: 0 2px 8px rgba(243, 156, 18, 0.4);
+            transition: all 0.2s;
+        }
+
+        .btn-ticket-preparing:active {
+            transform: scale(0.97);
+            background-color: #d68910;
+        }
+
+        /* EMPTY SCREEN */
+        .kds-empty-state {
+            margin: auto;
+            text-align: center;
+            color: var(--text-muted);
+            padding: 40px;
+        }
+
+        .kds-empty-state i {
+            font-size: 60px;
+            color: #444;
+            margin-bottom: 16px;
+        }
+
+        .kds-empty-state h3 {
+            font-size: 22px;
+            color: #eee;
+            margin-bottom: 8px;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- KDS TOP BAR -->
+    <header class="kds-header">
+        <div class="header-brand">
+            <i class="fa fa-fire-burner"></i>
+            <span>MÀN HÌNH BẾP (KDS)</span>
+        </div>
+
+        <div class="header-stats">
+            <div class="stat-pill active">
+                <i class="fa fa-bell"></i>
+                <span id="stat-processing-count">0 bàn đang chế biến</span>
+            </div>
+            <div class="stat-pill" style="color: #aaa;">
+                <i class="fa fa-clock"></i>
+                <span id="current-clock">00:00:00</span>
+            </div>
+        </div>
+
+        <div class="header-actions">
+            <span id="kds-user-badge" style="font-size: 13px; color: #ff9800; font-weight: bold;"></span>
+            <label class="d-flex align-items-center gap-2 mb-0" style="cursor: pointer; background: #3a3b3c; padding: 6px 12px; border-radius: 8px; font-size: 13px; font-weight: 600; color: #ffca28; border: 1px solid #4e4f50;">
+                <input type="checkbox" id="autoPrintToggle" style="width: 16px; height: 16px; cursor: pointer;" checked>
+                <span><i class="fa fa-print"></i> Tự động in phiếu bếp</span>
+            </label>
+            <button class="btn-kds-header" onclick="loadKitchenOrders()" title="Tải lại đơn">
+                <i class="fa fa-sync-alt"></i> Làm mới
+            </button>
+            <button class="btn-kds-header" onclick="logoutKitchen()" title="Đăng xuất">
+                <i class="fa fa-sign-out-alt"></i> Đăng xuất
+            </button>
+        </div>
+    </header>
+
+    <!-- TICKETS CONTAINER -->
+    <main class="kds-container" id="kds-tickets-container">
+        <!-- Dynamic Tickets rendered here -->
+        <div class="kds-empty-state">
+            <i class="fa fa-utensils"></i>
+            <h3>Hiện tại Bếp đã hoàn tất mọi món ăn!</h3>
+            <p>Hệ thống tự động lắng nghe và làm mới khi nhân viên gửi đơn mới.</p>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+    <script src="js/jquery.min.js"></script>
+    <script src="js/bootstrap.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+    <script>
+        const API_BASE = '/api/v1';
+        let kitchenOrders = [];
+        let autoRefreshInterval = null;
+
+        function escapeHtml(unsafe) {
+            if (!unsafe) return "";
+            return String(unsafe)
+                 .replace(/&/g, "&amp;")
+                 .replace(/</g, "&lt;")
+                 .replace(/>/g, "&gt;")
+                 .replace(/"/g, "&quot;")
+                 .replace(/'/g, "&#039;");
+        }
+
+        async function fetchWithAuth(url, options = {}) {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                window.location.href = '/login/login.html';
+                return;
+            }
+            const headers = {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+                ...options.headers
+            };
+            const response = await fetch(API_BASE + url, { ...options, headers });
+            
+            if (response.status === 401 || response.status === 403) {
+                alert("Bạn không có quyền truy cập màn hình Bếp hoặc phiên đăng nhập hết hạn!");
+                window.location.href = '/login';
+                throw new Error("Unauthorized");
+            }
+            
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.message || 'Lỗi kết nối máy chủ');
+            }
+            return data;
+        }
+
+        function checkKitchenAuth() {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                window.location.href = '/login';
+                return false;
+            }
+
+            const roles = JSON.parse(localStorage.getItem('userRoles') || '[]');
+            const isKitchenAllowed = roles.some(r => typeof r === 'string' && (
+                r.toUpperCase() === 'ROLE_KITCHEN' || 
+                r.toUpperCase() === 'KITCHEN' || 
+                r.toUpperCase() === 'ROLE_ADMIN' || 
+                r.toUpperCase() === 'ADMIN'
+            ));
+            
+            if (!isKitchenAllowed) {
+                alert("Tài khoản của bạn không có quyền truy cập Màn hình Bếp (KDS)!");
+                window.location.href = '/pos-tables';
+                return false;
+            }
+
+            const fullName = localStorage.getItem('userFullName') || localStorage.getItem('userEmail') || 'Đầu bếp';
+            const badge = document.getElementById('kds-user-badge');
+            if (badge) badge.innerText = `👨‍🍳 ${fullName}`;
+
+            return true;
+        }
+
+        function logoutKitchen() {
+            if (confirm("Đăng xuất khỏi màn hình Bếp?")) {
+                localStorage.clear();
+                window.location.href = '/login';
+            }
+        }
+
+        // Cập nhật đồng hồ thời gian thực
+        function startLiveClock() {
+            setInterval(() => {
+                const now = new Date();
+                const clockEl = document.getElementById('current-clock');
+                if (clockEl) {
+                    clockEl.innerText = now.toLocaleTimeString('vi-VN');
+                }
+            }, 1000);
+        }
+
+        let printedOrderIds = new Set(JSON.parse(sessionStorage.getItem('printed_kitchen_order_ids') || '[]'));
+        let isFirstLoad = true;
+
+        // Phát chuông báo khi có đơn mới gửi xuống bếp
+        function playNewOrderSound() {
+            try {
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(523.25, audioCtx.currentTime); // Đô (C5)
+                osc.frequency.setValueAtTime(659.25, audioCtx.currentTime + 0.15); // Mi (E5)
+                osc.frequency.setValueAtTime(783.99, audioCtx.currentTime + 0.3); // Son (G5)
+                gain.gain.setValueAtTime(0.35, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.8);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.8);
+            } catch(e) {}
+        }
+
+        // Nạp các đơn hàng đang chế biến (PROCESSING hoặc PENDING)
+        async function loadKitchenOrders() {
+            try {
+                const res = await fetchWithAuth('/orders/all');
+                const allOrders = res.data || [];
+                
+                // Chỉ lấy các đơn PENDING hoặc PROCESSING (chưa READY và chưa COMPLETED)
+                const activeForKitchen = allOrders.filter(o => o.status === 'PROCESSING' || o.status === 'PENDING');
+                
+                // Đơn nào gọi trước xếp trước (FIFO)
+                activeForKitchen.sort((a,b) => new Date(a.createdAt || a.orderDate) - new Date(b.createdAt || b.orderDate));
+
+                kitchenOrders = activeForKitchen;
+
+                const countEl = document.getElementById('stat-processing-count');
+                if (countEl) countEl.innerText = `${kitchenOrders.length} bàn đang chờ làm`;
+
+                await renderKitchenTickets();
+
+                // Kiểm tra đơn mới để phát chuông và tự động in phiếu tại bếp
+                const autoPrint = document.getElementById('autoPrintToggle')?.checked;
+                for (const ord of activeForKitchen) {
+                    if (!printedOrderIds.has(ord.id)) {
+                        printedOrderIds.add(ord.id);
+                        sessionStorage.setItem('printed_kitchen_order_ids', JSON.stringify([...printedOrderIds]));
+
+                        if (!isFirstLoad) {
+                            playNewOrderSound();
+                            if (autoPrint) {
+                                printKitchenTicketDirect(ord.id);
+                            }
+                        }
+                    }
+                }
+                isFirstLoad = false;
+
+            } catch (err) {
+                console.error("Lỗi tải đơn bếp:", err);
+            }
+        }
+
+        async function renderKitchenTickets() {
+            const container = document.getElementById('kds-tickets-container');
+            if (!container) return;
+
+            if (kitchenOrders.length === 0) {
+                container.innerHTML = `
+                    <div class="kds-empty-state">
+                        <i class="fa fa-utensils"></i>
+                        <h3>Hiện tại Bếp đã hoàn tất mọi món ăn!</h3>
+                        <p>Hệ thống tự động cập nhật khi có bàn order thêm món...</p>
+                    </div>
+                `;
+                return;
+            }
+
+            let html = '';
+
+            for (const ord of kitchenOrders) {
+                // Fetch danh sách món chi tiết của order này
+                let allItems = [];
+                try {
+                    const itemRes = await fetchWithAuth(`/order-items/order/${ord.id}`);
+                    allItems = itemRes.data || [];
+                } catch(e) {}
+
+                if (allItems.length === 0) continue; // Bỏ qua order rỗng
+
+                // CHỈ LẤY CÁC MÓN CHƯA LÀM (PENDING / PREPARING). Bỏ qua các món ĐÃ LÊN (READY / CANCELLED)
+                const pendingItems = allItems.filter(it => it.status !== 'READY' && it.status !== 'CANCELLED');
+                const servedItems = allItems.filter(it => it.status === 'READY');
+
+                // Nếu tất cả các món của bàn này đã xong hết thì không cần hiển thị trên bếp
+                if (pendingItems.length === 0) continue;
+
+                const isAddition = servedItems.length > 0;
+                const orderTime = new Date(ord.createdAt || ord.orderDate || Date.now());
+                const diffMinutes = Math.floor((Date.now() - orderTime.getTime()) / 60000);
+                const timeColor = diffMinutes > 20 ? '#e74c3c' : (diffMinutes > 10 ? '#ff9800' : '#2ecc71');
+
+                // Kiểm tra xem còn món nào đang chờ chế biến không
+                const hasPendingItems = pendingItems.some(it => it.status !== 'PREPARING' && it.status !== 'READY');
+                const isAllPreparing = !hasPendingItems && pendingItems.some(it => it.status === 'PREPARING');
+
+                let itemsListHtml = pendingItems.map(it => {
+                    const pName = it.productName || (it.product ? it.product.name : 'Món ăn');
+                    const isItemPreparing = it.status === 'PREPARING';
+                    return `
+                        <div class="ticket-item-row" id="kds-item-${it.id}" style="${isItemPreparing ? 'background: rgba(255, 152, 0, 0.08); border-radius: 6px; padding: 6px 8px;' : 'padding: 6px 8px;'}">
+                            <div class="item-main-line" style="display:flex; justify-content:space-between; align-items:center;">
+                                <div style="display:flex; align-items:center; gap:8px;">
+                                    ${isItemPreparing ? `
+                                        <span class="badge" style="background:#ff9800; color:#fff; font-size:11px; font-weight:bold; padding:3px 8px; border-radius:4px;"><i class="fa fa-fire"></i> Đang nấu</span>
+                                        <button class="btn btn-sm" style="padding:2px 7px; font-size:11px; font-weight:bold; border-radius:4px; color:#fff; background:#2ecc71; border:none; cursor:pointer;" onclick="markSingleItemServed(${it.id}, ${ord.id})" title="Đã nấu xong - Xác nhận lên món này">
+                                            <i class="fa fa-check"></i> Xong món
+                                        </button>
+                                    ` : `
+                                        <span class="badge" style="background:#4b5563; color:#e5e7eb; font-size:11px; padding:3px 8px; border-radius:4px;"><i class="fa fa-clock"></i> Chờ chế biến</span>
+                                    `}
+                                    <span class="item-name" style="${isItemPreparing ? 'color: #ffb74d; font-weight:bold;' : ''}">${escapeHtml(pName)}</span>
+                                </div>
+                                <span class="item-qty">x${it.quantity || 1}</span>
+                            </div>
+                            ${it.note ? `
+                                <div class="item-note">
+                                    <i class="fa fa-comment-dots"></i> Ghi chú: ${escapeHtml(it.note)}
+                                </div>
+                            ` : ''}
+                        </div>
+                    `;
+                }).join('');
+
+                // Ghi chú nếu là bàn gọi thêm món mới
+                let historyHtml = '';
+                if (isAddition) {
+                    const servedNames = servedItems.map(s => escapeHtml(s.productName || (s.product ? s.product.name : 'Món'))).join(', ');
+                    historyHtml = `
+                        <div style="margin-top: 8px; padding: 6px 10px; background: rgba(46, 204, 113, 0.1); border-left: 3px solid #2ecc71; border-radius: 4px; font-size: 12px; color: #aaa;">
+                            <span style="color:#2ecc71; font-weight:bold;"><i class="fa fa-check-circle"></i> Đã lên ${servedItems.length} món trước:</span> ${servedNames}
+                        </div>
+                    `;
+                }
+
+                html += `
+                    <div class="kds-ticket ${isAllPreparing ? 'processing' : 'pending'}">
+                        <div class="kds-ticket-header">
+                            <div class="ticket-table-name">
+                                <i class="fa fa-utensils ${isAllPreparing ? 'text-warning' : 'text-info'}"></i>
+                                <span>${escapeHtml(ord.tableName || ('BÀN ' + ord.tableId))}</span>
+                                ${isAddition ? `<span style="background:#ff9800; color:#000; font-size:11px; font-weight:900; padding:2px 8px; border-radius:12px; margin-left:6px;"><i class="fa fa-plus"></i> GỌI THÊM</span>` : ''}
+                            </div>
+                            <div class="ticket-time-tag" style="color: ${timeColor}; background: rgba(255,255,255,0.08);">
+                                <i class="fa fa-clock"></i>
+                                <span>${diffMinutes} phút trước</span>
+                            </div>
+                        </div>
+
+                        <div class="ticket-meta">
+                            <span>Mã đơn: #${ord.orderCode || ord.id}</span>
+                            <span>NV: ${escapeHtml(ord.username || 'Phục vụ')}</span>
+                        </div>
+
+                        <div class="ticket-items-body">
+                            ${itemsListHtml}
+                            ${historyHtml}
+                        </div>
+
+                        <div class="ticket-footer">
+                            <button class="btn-ticket-print" onclick="printKitchenTicketDirect(${ord.id})" title="In phiếu bếp">
+                                <i class="fa fa-print"></i> In phiếu
+                            </button>
+                            ${hasPendingItems ? `
+                                <button class="btn-ticket-preparing" onclick="markOrderPreparing(${ord.id})" title="Xác nhận nhận đơn và bắt đầu chế biến toàn bộ món">
+                                    <i class="fa fa-fire"></i> NHẬN ĐƠN & CHẾ BIẾN
+                                </button>
+                            ` : `
+                                <button class="btn-ticket-served" onclick="markOrderServed(${ord.id})" title="Xác nhận đã chế biến xong toàn bộ món để phục vụ">
+                                    <i class="fa fa-check-circle"></i> XÁC NHẬN LÊN MÓN
+                                </button>
+                            `}
+                        </div>
+                    </div>
+                `;
+            }
+
+            container.innerHTML = html;
+        }
+
+        // BẮT ĐẦU CHẾ BIẾN TỪNG MÓN LẺ
+        window.markSingleItemPreparing = async function(itemId, orderId) {
+            try {
+                await fetchWithAuth(`/order-items/${itemId}/status?status=PREPARING`, { method: 'PUT' });
+                // Cập nhật trạng thái Order thành PROCESSING
+                await fetchWithAuth(`/orders/${orderId}/status?status=PROCESSING`, { method: 'PUT' }).catch(() => {});
+
+                Swal.fire({
+                    toast: true,
+                    position: 'top-end',
+                    icon: 'info',
+                    title: 'Đang chế biến món!',
+                    showConfirmButton: false,
+                    timer: 1200
+                });
+
+                await loadKitchenOrders();
+            } catch(err) {
+                alert("Lỗi cập nhật món: " + err.message);
+            }
+        };
+
+        // NHẬN CHẾ BIẾN TOÀN BỘ ĐƠN CỦA BÀN
+        window.markOrderPreparing = async function(orderId) {
+            const ord = kitchenOrders.find(o => o.id === orderId);
+            const tblName = ord ? (ord.tableName || ('Bàn ' + ord.tableId)) : '';
+
+            try {
+                // 1. Cập nhật tất cả các order_items đang PENDING thành PREPARING
+                const itemRes = await fetchWithAuth(`/order-items/order/${orderId}`);
+                const allItems = itemRes.data || [];
+                const pendingItems = allItems.filter(it => it.status !== 'READY' && it.status !== 'CANCELLED' && it.status !== 'PREPARING');
+
+                await Promise.all(pendingItems.map(it =>
+                    fetchWithAuth(`/order-items/${it.id}/status?status=PREPARING`, { method: 'PUT' }).catch(e => console.error(e))
+                ));
+
+                // 2. Cập nhật trạng thái Order thành PROCESSING
+                await fetchWithAuth(`/orders/${orderId}/status?status=PROCESSING`, { method: 'PUT' });
+
+                Swal.fire({
+                    toast: true,
+                    position: 'top-end',
+                    icon: 'warning',
+                    title: `Bếp đang chế biến món cho [${tblName}]!`,
+                    showConfirmButton: false,
+                    timer: 1500
+                });
+
+                await loadKitchenOrders();
+            } catch (err) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Lỗi cập nhật',
+                    text: err.message
+                });
+            }
+        };
+
+        // XÁC NHẬN XONG TỪNG MÓN LẺ
+        window.markSingleItemServed = async function(itemId, orderId) {
+            try {
+                await fetchWithAuth(`/order-items/${itemId}/status?status=READY`, { method: 'PUT' });
+
+                // Kiểm tra xem đơn này còn món nào chưa xong không
+                const itemRes = await fetchWithAuth(`/order-items/order/${orderId}`);
+                const allItems = itemRes.data || [];
+                const remaining = allItems.filter(it => it.status !== 'READY' && it.status !== 'CANCELLED');
+                if (remaining.length === 0) {
+                    await fetchWithAuth(`/orders/${orderId}/status?status=READY`, { method: 'PUT' });
+                }
+
+                Swal.fire({
+                    toast: true,
+                    position: 'top-end',
+                    icon: 'success',
+                    title: 'Đã hoàn tất món ăn!',
+                    showConfirmButton: false,
+                    timer: 1200
+                });
+
+                await loadKitchenOrders();
+            } catch(err) {
+                alert("Lỗi cập nhật món: " + err.message);
+            }
+        };
+
+        // XÁC NHẬN ĐÃ NẤU XONG TOÀN BỘ CÁC MÓN CỦA BÀN
+        window.markOrderServed = async function(orderId) {
+            const ord = kitchenOrders.find(o => o.id === orderId);
+            const tblName = ord ? (ord.tableName || ('Bàn ' + ord.tableId)) : '';
+
+            const res = await Swal.fire({
+                title: 'Xác nhận lên món?',
+                html: `Bếp đã hoàn tất toàn bộ món ăn cho <b>[${tblName}]</b>?`,
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonText: '<i class="fa fa-check me-1"></i> Đã Lên Món',
+                cancelButtonText: 'Chưa',
+                confirmButtonColor: '#2ecc71',
+                cancelButtonColor: '#6c757d'
+            });
+
+            if (!res.isConfirmed) return;
+
+            try {
+                // 1. Cập nhật tất cả các order_items đang chờ thành READY
+                const itemRes = await fetchWithAuth(`/order-items/order/${orderId}`);
+                const allItems = itemRes.data || [];
+                const pendingItems = allItems.filter(it => it.status !== 'READY' && it.status !== 'CANCELLED');
+
+                await Promise.all(pendingItems.map(it =>
+                    fetchWithAuth(`/order-items/${it.id}/status?status=READY`, { method: 'PUT' }).catch(e => console.error(e))
+                ));
+
+                // 2. Cập nhật trạng thái Order thành READY (Món đã sẵn sàng phục vụ)
+                await fetchWithAuth(`/orders/${orderId}/status?status=READY`, {
+                    method: 'PUT'
+                });
+
+                Swal.fire({
+                    toast: true,
+                    position: 'top-end',
+                    icon: 'success',
+                    title: `Đã hoàn tất món cho [${tblName}]!`,
+                    showConfirmButton: false,
+                    timer: 1500
+                });
+
+                await loadKitchenOrders(); // Nạp lại danh sách
+            } catch (err) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Lỗi cập nhật',
+                    text: err.message
+                });
+            }
+        };
+
+        // IN PHIẾU BÁO BẾP TRỰC TIẾP TẠI BẾP
+        window.printKitchenTicketDirect = async function(orderId) {
+            const ord = kitchenOrders.find(o => o.id === orderId);
+            if (!ord) return;
+
+            try {
+                const itemRes = await fetchWithAuth(`/order-items/order/${ord.id}`);
+                const allItems = itemRes.data || [];
+
+                // CHỈ IN CÁC MÓN CẦN NẤU (CHƯA READY)
+                const pendingItems = allItems.filter(it => it.status !== 'READY' && it.status !== 'CANCELLED');
+                const servedItems = allItems.filter(it => it.status === 'READY');
+
+                if (pendingItems.length === 0) return; // Không có món mới cần làm
+
+                const isAddition = servedItems.length > 0;
+
+                const itemsHtml = pendingItems.map((it, idx) => {
+                    const pName = it.productName || (it.product ? it.product.name : 'Món');
+                    return `
+                        <tr style="border-bottom: 1px dashed #444;">
+                            <td style="padding: 6px 4px; font-weight: bold; font-size: 15px;">${idx + 1}. ${escapeHtml(pName)}</td>
+                            <td style="padding: 6px 4px; text-align: center; font-size: 18px; font-weight: 900; color: #000;">x${it.quantity || 1}</td>
+                        </tr>
+                        ${it.note ? `
+                        <tr style="border-bottom: 1px dashed #ddd;">
+                            <td colspan="2" style="padding: 0 4px 6px 12px; font-size: 13px; color: #d00; font-style: italic;">
+                                👉 Yêu cầu: ${escapeHtml(it.note)}
+                            </td>
+                        </tr>` : ''}
+                    `;
+                }).join('');
+
+                const html = `
+                    <!DOCTYPE html>
+                    <html>
+                        <head>
+                            <title>Phiếu Báo Bếp - ${ord.tableName || ord.tableId}</title>
+                            <style>
+                                @page { margin: 0; size: auto; }
+                                body { font-family: monospace, 'Courier New', sans-serif; padding: 15px; width: 280px; margin: 0 auto; color: #000; }
+                                .header { text-align: center; border-bottom: 2px dashed #000; padding-bottom: 8px; margin-bottom: 10px; }
+                                .title { font-size: 20px; font-weight: bold; margin: 0; }
+                                .addition-tag { font-size: 13px; font-weight: 900; color: #fff; background: #000; padding: 3px; margin: 4px 0; border-radius: 4px; }
+                                .table-name { font-size: 24px; font-weight: 900; margin: 5px 0; background: #000; color: #fff; padding: 4px; border-radius: 4px; }
+                                .info { font-size: 13px; margin: 2px 0; text-align: left; }
+                                table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+                                .footer { text-align: center; font-size: 12px; margin-top: 15px; border-top: 2px dashed #000; padding-top: 6px; }
+                            </style>
+                        </head>
+                        <body>
+                            <div class="header">
+                                <div class="title">🍳 PHIẾU BÁO BẾP</div>
+                                ${isAddition ? `<div class="addition-tag">🔥 GỌI THÊM MÓN (${pendingItems.length} món mới)</div>` : ''}
+                                <div class="table-name">${ord.tableName || ('BÀN ' + ord.tableId)}</div>
+                                <div class="info">Mã đơn: #${ord.orderCode || ord.id}</div>
+                                <div class="info">Giờ gọi: ${new Date(ord.createdAt || ord.orderDate).toLocaleTimeString('vi-VN')}</div>
+                                <div class="info">NV: ${ord.username || 'Phục vụ'}</div>
+                            </div>
+                            <table>
+                                <tbody>
+                                    ${itemsHtml}
+                                </tbody>
+                            </table>
+                            ${isAddition ? `
+                            <div style="font-size: 11px; color: #444; margin-top: 8px; font-style: italic; border-top: 1px dotted #888; padding-top: 4px;">
+                                * Đã lên ${servedItems.length} món trước đó. Chỉ chế biến các món mới trên phiếu này! *
+                            </div>` : ''}
+                            <div class="footer">
+                                * Vui lòng chế biến đúng theo yêu cầu ghi chú *
+                            </div>
+                        </body>
+                    </html>
+                `;
+
+                let printIframe = document.getElementById('kitchen-print-frame');
+                if (!printIframe) {
+                    printIframe = document.createElement('iframe');
+                    printIframe.id = 'kitchen-print-frame';
+                    printIframe.style.position = 'fixed';
+                    printIframe.style.right = '0';
+                    printIframe.style.bottom = '0';
+                    printIframe.style.width = '0';
+                    printIframe.style.height = '0';
+                    printIframe.style.border = '0';
+                    document.body.appendChild(printIframe);
+                }
+
+                const doc = printIframe.contentWindow.document;
+                doc.open();
+                doc.write(html);
+                doc.close();
+
+                setTimeout(() => {
+                    printIframe.contentWindow.focus();
+                    printIframe.contentWindow.print();
+                }, 400);
+
+            } catch (err) {
+                console.error("Lỗi in phiếu:", err);
+            }
+        };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            if (checkKitchenAuth()) {
+                startLiveClock();
+                loadKitchenOrders();
+
+                // Tự động quét cập nhật đơn mới mỗi 8 giây một lần
+                autoRefreshInterval = setInterval(loadKitchenOrders, 8000);
+            }
+        });
+    </script>
+</body>
+</html>

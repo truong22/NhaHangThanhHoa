@@ -1,0 +1,1051 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <title>Thực đơn Gọi Món - Nhà Hàng Thanh Hóa</title>
+    <script>
+        (function() {
+            try {
+                const path = window.location.pathname;
+                if (path.endsWith('.html')) {
+                    let clean = path.replace(/\.html$/, '');
+                    window.history.replaceState(null, '', clean + window.location.search + window.location.hash);
+                }
+            } catch(e) {}
+        })();
+    </script>
+    <!-- Fonts & Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="css/bootstrap.min.css">
+    <!-- SweetAlert2 for modern popup dialogs -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
+
+    <style>
+        :root {
+            --haidilao-dark: #1e1e24;
+            --haidilao-sidebar: #2b2b36;
+            --haidilao-sidebar-active: #e23e3e;
+            --haidilao-yellow: #f5a623;
+            --haidilao-red: #d10024;
+            --haidilao-bg: #f4f5f7;
+            --text-dark: #222;
+        }
+
+        * {
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            font-family: 'Roboto', sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: var(--haidilao-bg);
+            color: var(--text-dark);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        /* TOP BAR */
+        .tablet-header {
+            height: 52px;
+            background-color: var(--haidilao-dark);
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 16px;
+            z-index: 100;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            flex-shrink: 0;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .table-badge {
+            background: linear-gradient(135deg, #f5a623, #d98205);
+            color: #fff;
+            font-weight: 700;
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .header-title-info {
+            font-size: 13px;
+            color: #ccc;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 320px;
+        }
+
+        @media (max-width: 768px) {
+            .header-title-info { display: none; }
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .btn-header-action {
+            background-color: #383846;
+            color: #fff;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.2s;
+        }
+
+        .btn-header-action:hover {
+            background-color: #4a4a5c;
+            color: #fff;
+        }
+
+        .btn-back-tables {
+            background-color: #2b2b36;
+            border: 1px solid #4a4a5c;
+        }
+
+        /* MAIN CONTENT AREA */
+        .tablet-container {
+            display: flex;
+            flex: 1;
+            height: calc(100vh - 52px - 60px);
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* LEFT SIDEBAR: CATEGORIES */
+        .category-sidebar {
+            width: 140px;
+            background-color: var(--haidilao-sidebar);
+            overflow-y: auto;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid #202028;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .category-sidebar::-webkit-scrollbar {
+            width: 4px;
+        }
+        .category-sidebar::-webkit-scrollbar-thumb {
+            background: #444;
+            border-radius: 2px;
+        }
+
+        .category-item {
+            padding: 16px 10px;
+            color: #c0c0cf;
+            font-size: 14px;
+            font-weight: 500;
+            text-align: center;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            line-height: 1.3;
+        }
+
+        .category-item i {
+            font-size: 18px;
+        }
+
+        .category-item:hover {
+            background-color: rgba(255,255,255,0.05);
+            color: #fff;
+        }
+
+        .category-item.active {
+            background-color: #fff;
+            color: var(--haidilao-red);
+            font-weight: 700;
+            position: relative;
+            box-shadow: 2px 0 8px rgba(0,0,0,0.1);
+        }
+
+        .category-item.active::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 4px;
+            background-color: var(--haidilao-red);
+        }
+
+        /* RIGHT DISHES AREA */
+        .food-content-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background-color: #f7f8fa;
+            overflow: hidden;
+        }
+
+        .food-filter-bar {
+            padding: 8px 16px;
+            background-color: #fff;
+            border-bottom: 1px solid #e5e5e5;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+            gap: 10px;
+        }
+
+        .search-food-box {
+            position: relative;
+            flex: 1;
+            max-width: 350px;
+        }
+
+        .search-food-box input {
+            width: 100%;
+            height: 36px;
+            padding: 0 12px 0 34px;
+            border-radius: 18px;
+            border: 1px solid #ddd;
+            font-size: 13px;
+            outline: none;
+            background-color: #f9f9fb;
+        }
+
+        .search-food-box input:focus {
+            border-color: var(--haidilao-red);
+            background-color: #fff;
+        }
+
+        .search-food-box i {
+            position: absolute;
+            left: 12px;
+            top: 11px;
+            color: #888;
+            font-size: 13px;
+        }
+
+        .food-grid-scroll {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        /* GRID LAYOUT FOR DISHES */
+        .food-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 14px;
+        }
+
+        @media (max-width: 900px) {
+            .food-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 576px) {
+            .food-grid {
+                grid-template-columns: 1fr;
+            }
+            .category-sidebar {
+                width: 95px;
+            }
+            .category-item {
+                font-size: 12px;
+                padding: 12px 6px;
+            }
+        }
+
+        /* DISH CARD - IPAD RESTAURANT STYLE (CHUẨN HAIDILAO) */
+        .dish-card {
+            background-color: #fff;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+            display: flex;
+            flex-direction: row;
+            border: 1px solid #e5e5eb;
+            transition: all 0.2s ease-in-out;
+            position: relative;
+            min-height: 150px;
+            height: 160px;
+        }
+
+        .dish-card:hover {
+            box-shadow: 0 6px 16px rgba(0,0,0,0.1);
+            border-color: #d8d8e0;
+        }
+
+        .dish-card:active {
+            transform: scale(0.98);
+        }
+
+        .dish-body {
+            padding: 14px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            flex: 1;
+            min-width: 0; /* Tránh tràn text */
+        }
+
+        .dish-title {
+            font-size: 17px;
+            font-weight: 700;
+            color: #1a1a1a;
+            margin: 0 0 4px 0;
+            line-height: 1.3;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            cursor: pointer;
+        }
+
+        .dish-category-tag {
+            font-size: 12px;
+            color: #888;
+            margin-bottom: 6px;
+        }
+
+        .dish-portion-badge {
+            display: inline-block;
+            border: 1px solid #e0a0a0;
+            color: var(--haidilao-red);
+            background-color: #fff8f8;
+            font-size: 11px;
+            padding: 1px 8px;
+            border-radius: 4px;
+            font-weight: 500;
+            margin-bottom: 8px;
+            width: fit-content;
+        }
+
+        .dish-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-top: auto;
+        }
+
+        .dish-price {
+            color: var(--haidilao-red);
+            font-weight: 700;
+            font-size: 18px;
+        }
+
+        .dish-price span {
+            font-size: 12px;
+            font-weight: normal;
+            color: #888;
+            margin-left: 2px;
+        }
+
+        /* KHUNG ẢNH BÊN PHẢI TO RÕ FULL */
+        .dish-img-wrap {
+            width: 170px;
+            height: 100%;
+            background-color: #f7f7f9;
+            position: relative;
+            flex-shrink: 0;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+
+        .dish-img-wrap img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.3s;
+        }
+
+        .dish-card:hover .dish-img-wrap img {
+            transform: scale(1.05);
+        }
+
+        @media (max-width: 1200px) {
+            .dish-img-wrap {
+                width: 140px;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .dish-card {
+                height: 135px;
+                min-height: 135px;
+            }
+            .dish-img-wrap {
+                width: 125px;
+            }
+            .dish-title {
+                font-size: 15px;
+            }
+            .dish-price {
+                font-size: 16px;
+            }
+        }
+
+        /* STEPPER / ADD BTN */
+        .dish-action-group {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .btn-circle-add {
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            background-color: var(--haidilao-red);
+            color: #fff;
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            cursor: pointer;
+            box-shadow: 0 2px 6px rgba(209, 0, 36, 0.4);
+            transition: all 0.15s;
+        }
+
+        .btn-circle-add:active {
+            transform: scale(0.9);
+            background-color: #b0001e;
+        }
+
+        .stepper-box {
+            display: flex;
+            align-items: center;
+            background-color: #f0f0f3;
+            border-radius: 20px;
+            padding: 2px 4px;
+            gap: 6px;
+        }
+
+        .btn-stepper {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            border: none;
+            background-color: #fff;
+            color: #333;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 14px;
+            cursor: pointer;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .btn-stepper.plus {
+            background-color: var(--haidilao-red);
+            color: #fff;
+        }
+
+        .btn-stepper:disabled {
+            background-color: #e2e8f0 !important;
+            color: #94a3b8 !important;
+            cursor: not-allowed !important;
+            box-shadow: none !important;
+            opacity: 0.45 !important;
+        }
+
+        .stepper-val {
+            font-weight: 700;
+            font-size: 14px;
+            min-width: 20px;
+            text-align: center;
+            color: #111;
+        }
+
+        /* BOTTOM ORDER / CHECKOUT BAR */
+        .tablet-bottom-bar {
+            height: 60px;
+            background-color: var(--haidilao-dark);
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 16px;
+            flex-shrink: 0;
+            z-index: 100;
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.25);
+        }
+
+        .cart-info-trigger {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            cursor: pointer;
+            background: none;
+            border: none;
+            color: #fff;
+            padding: 0;
+        }
+
+        .cart-badge-icon {
+            position: relative;
+            width: 44px;
+            height: 44px;
+            background-color: #383846;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            color: #f5a623;
+        }
+
+        .cart-badge-num {
+            position: absolute;
+            top: -5px;
+            right: -6px;
+            background-color: var(--haidilao-red);
+            color: #fff;
+            border-radius: 10px;
+            padding: 2px 7px;
+            font-size: 11px;
+            font-weight: bold;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .cart-amount-box {
+            display: flex;
+            flex-direction: column;
+            text-align: left;
+        }
+
+        .cart-amount-total {
+            font-size: 18px;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .cart-amount-hint {
+            font-size: 11px;
+            color: #aaa;
+        }
+
+        .bottom-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .btn-view-order-tray {
+            background-color: #444454;
+            color: #fff;
+            border: none;
+            height: 44px;
+            padding: 0 16px;
+            border-radius: 8px;
+            font-weight: 500;
+            font-size: 14px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-pay-now {
+            background-color: var(--haidilao-red);
+            color: #fff;
+            border: none;
+            height: 44px;
+            padding: 0 24px;
+            border-radius: 8px;
+            font-weight: 700;
+            font-size: 15px;
+            cursor: pointer;
+            letter-spacing: 0.5px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 2px 8px rgba(209, 0, 36, 0.4);
+        }
+
+        .btn-pay-now:active {
+            background-color: #b0001e;
+        }
+
+        /* CART SIDE DRAWER / MODAL */
+        .cart-drawer-backdrop {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.6);
+            z-index: 1050;
+            display: none;
+            backdrop-filter: blur(2px);
+        }
+
+        .cart-drawer {
+            position: fixed;
+            top: 0;
+            right: -420px;
+            bottom: 0;
+            width: 400px;
+            max-width: 90vw;
+            background-color: #fff;
+            z-index: 1060;
+            box-shadow: -4px 0 20px rgba(0,0,0,0.3);
+            transition: right 0.3s cubic-bezier(0.1, 0.9, 0.2, 1);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .cart-drawer.open {
+            right: 0;
+        }
+
+        .drawer-header {
+            padding: 16px;
+            background-color: var(--haidilao-dark);
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .drawer-header h4 {
+            margin: 0;
+            font-size: 16px;
+            font-weight: 700;
+        }
+
+        .drawer-close {
+            background: none;
+            border: none;
+            color: #aaa;
+            font-size: 20px;
+            cursor: pointer;
+        }
+
+        .drawer-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 14px;
+        }
+
+        .cart-item-row {
+            display: flex;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid #eee;
+            gap: 12px;
+        }
+
+        .cart-item-img {
+            width: 55px;
+            height: 55px;
+            border-radius: 8px;
+            object-fit: cover;
+            background-color: #eee;
+        }
+
+        .cart-item-info {
+            flex: 1;
+        }
+
+        .cart-item-name {
+            font-weight: 600;
+            font-size: 14px;
+            margin-bottom: 2px;
+            color: #222;
+        }
+
+        .cart-item-note {
+            font-size: 11px;
+            color: #888;
+            margin-bottom: 4px;
+        }
+
+        .cart-item-price {
+            font-weight: 700;
+            color: var(--haidilao-red);
+            font-size: 13px;
+        }
+
+        .drawer-footer {
+            padding: 16px;
+            background-color: #f9f9fb;
+            border-top: 1px solid #e0e0e0;
+        }
+
+        .drawer-summary-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .drawer-summary-row.total {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--haidilao-red);
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px dashed #ccc;
+        }
+
+        .drawer-actions {
+            margin-top: 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        /* CUSTOM PAGINATION PILLS */
+        .pagination-bar {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 12px 0 20px 0;
+        }
+
+        .page-pill {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            background: #fff;
+            border: 1px solid #ddd;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            color: #444;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.15s;
+        }
+
+        .page-pill.active {
+            background-color: var(--haidilao-red);
+            color: #fff;
+            border-color: var(--haidilao-red);
+            box-shadow: 0 2px 6px rgba(209, 0, 36, 0.3);
+        }
+
+        .page-pill:hover:not(.active) {
+            background-color: #f0f0f0;
+            color: #111;
+        }
+
+        /* TABLES MODAL FOR QUICK SWITCH */
+        .table-switch-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            max-height: 350px;
+            overflow-y: auto;
+            padding: 6px;
+        }
+
+        .table-switch-card {
+            padding: 12px;
+            text-align: center;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            border: 2px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .table-switch-card.empty {
+            background-color: #f0fdf4;
+            color: #166534;
+            border-color: #bbf7d0;
+        }
+
+        .table-switch-card.occupied {
+            background-color: #fffbeb;
+            color: #b45309;
+            border-color: #fde68a;
+        }
+
+        .table-switch-card.active {
+            border-color: var(--haidilao-red) !important;
+            transform: scale(1.03);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        }
+
+        /* TĂNG KÍCH THƯỚC POPUP VÀ HỘP THOẠI CHO DỄ NHÌN */
+        .swal2-popup {
+            font-size: 1.15rem !important;
+            border-radius: 16px !important;
+            padding: 24px 20px !important;
+            width: 32em !important;
+            max-width: 92vw !important;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.25) !important;
+        }
+
+        .swal2-title {
+            font-size: 1.6rem !important;
+            font-weight: 700 !important;
+        }
+
+        .swal2-html-container {
+            font-size: 1.15rem !important;
+            margin: 15px 0 !important;
+        }
+
+        .swal2-input {
+            height: 48px !important;
+            font-size: 1.15rem !important;
+            border-radius: 8px !important;
+            margin: 15px auto !important;
+        }
+
+        .swal2-actions button {
+            font-size: 1.1rem !important;
+            padding: 12px 28px !important;
+            border-radius: 8px !important;
+            font-weight: 600 !important;
+        }
+
+        /* CHECKOUT MODAL PHÓNG TO */
+        #checkoutModal .modal-dialog {
+            max-width: 600px;
+            width: 95%;
+            margin: 30px auto;
+        }
+        #checkoutModal .modal-header h4 {
+            font-size: 20px;
+        }
+        #checkoutModal .modal-body {
+            padding: 24px;
+            font-size: 16px;
+        }
+        #checkoutModal #checkoutTableLabel {
+            font-size: 22px;
+        }
+        #checkoutModal #checkoutTotal {
+            font-size: 26px;
+        }
+        #checkoutModal .modal-footer button {
+            font-size: 16px;
+            padding: 10px 24px;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- TOP HEADER -->
+    <header class="tablet-header">
+        <div class="header-left">
+            <a href="/pos-tables" class="btn-header-action btn-back-tables" title="Trở về sơ đồ bàn">
+                <i class="fa fa-arrow-left"></i> Sơ đồ bàn
+            </a>
+            <div class="table-badge" onclick="openTableSwitchModal()" title="Nhấn để đổi bàn">
+                <i class="fa fa-utensils"></i>
+                <span id="current-table-label">Đang tải bàn...</span>
+                <i class="fa fa-chevron-down" style="font-size: 11px; margin-left: 4px;"></i>
+            </div>
+            <span id="order-kitchen-status-badge" style="display:none; font-size:12px; font-weight:bold; padding:4px 10px; border-radius:6px; margin-left:6px; align-items:center; gap:4px; height:32px;"></span>
+            <div class="header-title-info">
+                <span>🍽️ Nhà Hàng Thanh Hóa - 88 Hải Tiến</span>
+            </div>
+        </div>
+
+        <div class="header-right">
+            <span id="auth-email-badge" style="font-size: 12px; color: #aaa; margin-right: 6px;"></span>
+            <button class="btn-header-action" onclick="logout(event)" title="Đăng xuất">
+                <i class="fa fa-sign-out-alt"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- TABLET MAIN BODY -->
+    <div class="tablet-container">
+        <!-- LEFT CATEGORY SIDEBAR -->
+        <aside class="category-sidebar" id="category-sidebar-list">
+            <!-- Dynamic categories rendered here -->
+            <div class="category-item active">
+                <i class="fa fa-fire"></i>
+                <span>Tất cả món</span>
+            </div>
+        </aside>
+
+        <!-- RIGHT DISHES AREA -->
+        <main class="food-content-area">
+            <!-- Filter & Search Bar -->
+            <div class="food-filter-bar">
+                <div class="search-food-box">
+                    <i class="fa fa-search"></i>
+                    <input type="text" id="food-search-input" placeholder="Tìm kiếm món ăn, đồ uống..." oninput="onSearchInput(this.value)">
+                </div>
+                <div style="font-size: 13px; color: #666; font-weight: 500;" id="food-count-label">
+                    Đang hiển thị món ăn
+                </div>
+            </div>
+
+            <!-- Food Cards Grid -->
+            <div class="food-grid-scroll">
+                <div class="food-grid" id="products-container">
+                    <!-- Dynamic dishes rendered here -->
+                </div>
+
+                <!-- Pagination Bottom -->
+                <div class="pagination-bar" id="products-pagination-container">
+                    <!-- Dynamic page pills -->
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- BOTTOM ORDER & CHECKOUT BAR -->
+    <footer class="tablet-bottom-bar">
+        <button class="cart-info-trigger" onclick="toggleCartDrawer()">
+            <div class="cart-badge-icon">
+                <i class="fa fa-receipt"></i>
+                <span class="cart-badge-num" id="bottom-cart-qty">0</span>
+            </div>
+            <div class="cart-amount-box">
+                <span class="cart-amount-total" id="bottom-cart-total">0 ₫</span>
+                <span class="cart-amount-hint"><span id="bottom-cart-count">0</span> món đã chọn • Bấm xem giỏ</span>
+            </div>
+        </button>
+
+        <div class="bottom-actions">
+            <button class="btn-view-order-tray" onclick="toggleCartDrawer()">
+                <i class="fa fa-list"></i> Xem món
+            </button>
+            <button class="btn btn-warning" id="btn-send-kitchen" style="height: 44px; padding: 0 16px; border-radius: 8px; font-weight: bold; font-size: 14px; background-color: #ff9800; color: #fff; border: none; display: flex; align-items: center; gap: 6px;" onclick="sendOrderToKitchen(event)">
+                <i class="fa fa-utensils"></i> GỬI BẾP
+            </button>
+            <button class="btn btn-info" id="btn-print-temp-bill" style="height: 44px; padding: 0 16px; border-radius: 8px; font-weight: bold; font-size: 14px; background-color: #0ea5e9; color: #fff; border: none; display: flex; align-items: center; gap: 6px;" onclick="printTemporaryBill(event)" title="In phiếu tạm tính cho khách kiểm tra trước khi trả tiền">
+                <i class="fa fa-print"></i> TẠM TÍNH
+            </button>
+            <button class="btn-pay-now" id="btn-main-pay" onclick="payOrder(event)">
+                <i class="fa fa-credit-card"></i> THANH TOÁN
+            </button>
+        </div>
+    </footer>
+
+    <!-- CART SIDE DRAWER -->
+    <div class="cart-drawer-backdrop" id="cart-drawer-backdrop" onclick="toggleCartDrawer()"></div>
+    <div class="cart-drawer" id="cart-drawer">
+        <div class="drawer-header">
+            <h4><i class="fa fa-shopping-basket me-2"></i> Món Đã Chọn Vào Bàn</h4>
+            <button class="drawer-close" onclick="toggleCartDrawer()">&times;</button>
+        </div>
+        <div class="drawer-body" id="cart-drawer-items">
+            <!-- Cart items dynamically rendered here -->
+        </div>
+        <div class="drawer-footer">
+            <div class="drawer-summary-row">
+                <span>Số lượng món:</span>
+                <strong id="drawer-item-count">0 món</strong>
+            </div>
+            <div class="drawer-summary-row total">
+                <span>Tổng tiền:</span>
+                <span id="drawer-total-amount">0 ₫</span>
+            </div>
+            <div class="drawer-actions" id="cart-drawer-btns">
+                <!-- Action buttons (Thanh toán, Hủy đơn, Mở bàn) -->
+            </div>
+        </div>
+    </div>
+
+    <!-- QUICK TABLE SWITCH MODAL -->
+    <div class="modal fade" id="tableSwitchModal" tabindex="-1" role="dialog">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content" style="border-radius: 12px; overflow: hidden;">
+                <div class="modal-header" style="background-color: var(--haidilao-dark); color: #fff;">
+                    <button type="button" class="close" data-dismiss="modal" style="color:#fff;">&times;</button>
+                    <h4 class="modal-title"><i class="fa fa-exchange-alt me-2"></i> Chuyển Bàn Phục Vụ</h4>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted"><small>Chọn bàn để xem đơn hoặc chọn món cho bàn đó:</small></p>
+                    <div class="table-switch-grid" id="modal-tables-grid">
+                        <!-- Dynamic tables -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- CHECKOUT MODAL -->
+    <div class="modal fade" id="checkoutModal" tabindex="-1" role="dialog" aria-labelledby="checkoutModalLabel">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content" style="border-radius: 12px; overflow: hidden;">
+                <div class="modal-header" style="background-color: var(--haidilao-red); color: white;">
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close" style="color: white;"><span aria-hidden="true">&times;</span></button>
+                    <h4 class="modal-title" id="checkoutModalTitle" style="color: white; font-weight: bold;"><i class="fa fa-cash-register me-2"></i> THANH TOÁN ĐƠN HÀNG</h4>
+                </div>
+                <div class="modal-body">
+                    <div style="background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 12px;">
+                        <h4 id="checkoutTableLabel" style="margin-top:0; color:#d10024; font-weight:bold;">Bàn: ...</h4>
+                        <p style="margin:2px 0;"><strong>Khách hàng:</strong> <span id="checkoutCustomerName">...</span></p>
+                        <p style="margin:2px 0;"><strong>Nhân viên:</strong> <span id="checkoutUserName">...</span></p>
+                    </div>
+                    <div id="checkoutSummary" style="margin: 10px 0; max-height: 220px; overflow-y: auto; border: 1px solid #eee; padding: 10px; border-radius: 6px;">
+                        <!-- items -->
+                    </div>
+                    <hr>
+                    <h3 id="checkoutTotal" style="color: var(--haidilao-red); text-align: right; font-weight:bold; margin: 10px 0;">THỰC THU: 0 VNĐ</h3>
+                    
+                    <div class="form-group" style="margin-top:15px;">
+                        <label><strong>Phương thức thanh toán:</strong></label>
+                        <select class="form-control" id="paymentMethod" style="height: 42px; font-weight: 500;">
+                            <option value="CASH">💵 Tiền mặt</option>
+                            <option value="BANK_TRANSFER">🏦 Chuyển khoản ngân hàng</option>
+                            <option value="CARD">💳 Thẻ tín dụng / ATM</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer" style="display:flex; justify-content:space-between; align-items:center;">
+                    <button type="button" class="btn btn-info" style="border-radius:6px; font-weight:bold; background-color: #0ea5e9; border:none; color:#fff; padding: 8px 16px;" onclick="printTemporaryBill(event)">
+                        <i class="fa fa-print me-1"></i> In Tạm Tính
+                    </button>
+                    <div>
+                        <button type="button" class="btn btn-default" data-dismiss="modal" style="border-radius:6px;">Đóng</button>
+                        <button type="button" class="btn btn-danger" style="background-color: var(--haidilao-red); color: white; border-radius:6px; font-weight:bold; padding: 8px 20px;" onclick="confirmCheckout()">
+                            <i class="fa fa-check me-1"></i> Xác Nhận Thanh Toán
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/jquery.min.js"></script>
+    <script src="js/bootstrap.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="order-app.js"></script>
+</body>
+</html>

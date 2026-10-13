@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Đăng nhập - Nhà Hàng Thanh Hóa</title>
+
+  <base href="/login/">
+  <script>
+    (function() {
+      if (window.location.pathname.endsWith('.html') || window.location.pathname.includes('/login/')) {
+        window.history.replaceState(null, '', '/login' + window.location.search + window.location.hash);
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="css/login.css">
+</head>
+
+<body>
+
+<div class="login-page">
+  <div class="login-card">
+
+    <div class="brand">
+      <div class="brand-icon">🍽️</div>
+      <h1>Nhà Hàng Thanh Hóa</h1>
+      <p>Hệ thống quản lý nhà hàng</p>
+    </div>
+
+    <form id="loginForm">
+
+      <div class="form-group">
+        <label for="email">Email</label>
+
+        <div class="input-box">
+          <span>✉</span>
+          <input
+                  type="email"
+                  id="email"
+                  placeholder="Nhập email"
+                  required
+          >
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="password">Mật khẩu</label>
+
+        <div class="input-box">
+          <span>🔒</span>
+
+          <input
+                  type="password"
+                  id="password"
+                  placeholder="Nhập mật khẩu"
+                  required
+          >
+
+          <button type="button" id="togglePassword">
+            Hiện
+          </button>
+        </div>
+      </div>
+
+      <div id="loginMessage" class="message"></div>
+
+      <button
+              type="submit"
+              id="loginButton"
+              class="login-button">
+        Đăng nhập
+      </button>
+
+    </form>
+
+    <div class="login-footer">
+      Hệ thống quản lý nhà hàng
+    </div>
+
+  </div>
+</div>
+
+<script src="js/login.js"></script>
+
+</body>
+</html>
