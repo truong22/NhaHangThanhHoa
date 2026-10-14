@@ -192,6 +192,12 @@ public class ReservationService
         reservations saved =
                 reservationRepository.save(reservation);
 
+        // Tự động chuyển trạng thái bàn sang RESERVED nếu bàn hiện đang trống
+        if ("AVAILABLE".equalsIgnoreCase(table.getStatus())) {
+            table.setStatus("RESERVED");
+            tableRepository.save(table);
+        }
+
         return convertToDto(saved);
 
     }
@@ -353,9 +359,23 @@ public class ReservationService
                                 )
                         );
 
+        tables_Restaurant table = reservation.getTable();
         reservationRepository.delete(
                 reservation
         );
+
+        if (table != null && "RESERVED".equalsIgnoreCase(table.getStatus())) {
+            List<reservations> remaining = reservationRepository.findByTableId(table.getId());
+            boolean hasActive = remaining != null && remaining.stream().anyMatch(r ->
+                    !r.getId().equals(id) &&
+                    !"CANCELLED".equalsIgnoreCase(r.getStatus()) &&
+                    !"COMPLETED".equalsIgnoreCase(r.getStatus())
+            );
+            if (!hasActive) {
+                table.setStatus("AVAILABLE");
+                tableRepository.save(table);
+            }
+        }
     }
 
 
@@ -540,6 +560,18 @@ public class ReservationService
                             .getCustomer()
                             .getFullName()
             );
+
+            dto.setCustomerPhone(
+                    reservation
+                            .getCustomer()
+                            .getPhone()
+            );
+
+            dto.setVisitCount(
+                    reservation
+                            .getCustomer()
+                            .getVisitCount()
+            );
         }
 
         if (reservation.getTable() != null) {
@@ -586,8 +618,28 @@ public class ReservationService
             throw new RuntimeException("Bàn mới đã có lịch đặt trùng thời gian");
         }
 
+        tables_Restaurant oldTable = reservation.getTable();
         reservation.setTable(newTable);
         reservations saved = reservationRepository.save(reservation);
+
+        if (newTable != null && "AVAILABLE".equalsIgnoreCase(newTable.getStatus())) {
+            newTable.setStatus("RESERVED");
+            tableRepository.save(newTable);
+        }
+
+        if (oldTable != null && "RESERVED".equalsIgnoreCase(oldTable.getStatus())) {
+            List<reservations> remaining = reservationRepository.findByTableId(oldTable.getId());
+            boolean hasActive = remaining != null && remaining.stream().anyMatch(r ->
+                    !r.getId().equals(reservationId) &&
+                    !"CANCELLED".equalsIgnoreCase(r.getStatus()) &&
+                    !"COMPLETED".equalsIgnoreCase(r.getStatus())
+            );
+            if (!hasActive) {
+                oldTable.setStatus("AVAILABLE");
+                tableRepository.save(oldTable);
+            }
+        }
+
         return convertToDto(saved);
     }
 }

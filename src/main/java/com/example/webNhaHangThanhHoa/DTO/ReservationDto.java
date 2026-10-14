@@ -20,6 +20,10 @@ public class ReservationDto {
 
     private String customerName;
 
+    private String customerPhone;
+
+    private Integer visitCount;
+
     private Long tableId;
 
     private String tableNumber;

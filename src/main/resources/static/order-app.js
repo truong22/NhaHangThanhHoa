@@ -66,10 +66,26 @@ async function loadInitialData() {
         
         renderCategories();
         
-        // Auto-load from URL if coming from pos-tables.html
+        // Auto-load from URL or sessionStorage if coming from pos-tables.html
         const urlParams = new URLSearchParams(window.location.search);
-        const urlTableId = parseInt(urlParams.get('tableId'));
-        const urlOrderId = parseInt(urlParams.get('orderId'));
+        let urlTableId = parseInt(urlParams.get('tableId'));
+        let urlOrderId = parseInt(urlParams.get('orderId'));
+        
+        if (urlTableId) {
+            sessionStorage.setItem('posTableId', urlTableId);
+            if (urlOrderId) {
+                sessionStorage.setItem('posOrderId', urlOrderId);
+            } else {
+                sessionStorage.removeItem('posOrderId');
+            }
+        } else {
+            const savedTableId = sessionStorage.getItem('posTableId');
+            const savedOrderId = sessionStorage.getItem('posOrderId');
+            if (savedTableId) {
+                urlTableId = parseInt(savedTableId);
+                if (savedOrderId) urlOrderId = parseInt(savedOrderId);
+            }
+        }
         
         if (urlTableId && urlOrderId) {
             const table = tablesData.find(t => t.id === urlTableId);
@@ -104,7 +120,7 @@ async function loadInitialData() {
             return;
         }
 
-        // Ẩn sạch tham số tableId và orderId trên thanh địa chỉ URL để bảo mật
+        // Cập nhật URL sạch đẹp
         if (window.location.search) {
             window.history.replaceState({}, document.title, window.location.pathname);
         }
@@ -162,10 +178,221 @@ async function updateTableLabel() {
         }
     }
 
+    const btnCus = document.getElementById('current-customer-btn');
+    const nameCus = document.getElementById('current-customer-name');
+    const badgeCus = document.getElementById('current-customer-visit-badge');
+    if (btnCus) {
+        if (currentOrder) {
+            btnCus.style.display = 'inline-flex';
+            const cName = currentOrder.customerName || 'Khách vãng lai';
+            if (nameCus) nameCus.innerText = cName;
+            
+            const visits = currentOrder.visitCount || 1;
+            const phone = currentOrder.customerPhone;
+            if (badgeCus) {
+                if (phone && phone !== '0000000000' && visits > 1) {
+                    badgeCus.style.display = 'inline-block';
+                    badgeCus.innerText = `Ghé ${visits} lần`;
+                    badgeCus.style.backgroundColor = '#10b981';
+                } else if (phone && phone !== '0000000000') {
+                    badgeCus.style.display = 'inline-block';
+                    badgeCus.innerText = 'Lần đầu';
+                    badgeCus.style.backgroundColor = '#0ea5e9';
+                } else {
+                    badgeCus.style.display = 'none';
+                }
+            }
+        } else {
+            btnCus.style.display = 'none';
+        }
+    }
+
     if (isCashierOrAdmin && currentTable.id) {
         checkTableFutureReservations(currentTable.id);
     }
 }
+
+let orderLookupTimeout = null;
+window.lookupCustomerByPhoneOrder = function(phone, nameInputId, feedbackElemId) {
+    if (orderLookupTimeout) clearTimeout(orderLookupTimeout);
+    const feedbackElem = document.getElementById(feedbackElemId);
+    if (!phone || phone.trim().length < 8) {
+        if (feedbackElem) feedbackElem.innerHTML = '';
+        return;
+    }
+    const cleanPhone = phone.trim();
+    if (cleanPhone === '0000000000') {
+        if (feedbackElem) feedbackElem.innerHTML = '';
+        return;
+    }
+
+    orderLookupTimeout = setTimeout(async () => {
+        try {
+            if (feedbackElem) feedbackElem.innerHTML = '<span style="color:#6c757d; font-size:12px;"><i class="fa fa-spinner fa-spin"></i> Đang tra cứu thông tin khách...</span>';
+            const res = await fetchWithAuth(`/customers/by-phone/${cleanPhone}`);
+            const customer = res.data;
+            if (customer && customer.fullName) {
+                const nameInput = document.getElementById(nameInputId);
+                if (nameInput && (!nameInput.value || nameInput.value === 'Khách vãng lai' || nameInput.value.trim() === '')) {
+                    nameInput.value = customer.fullName;
+                }
+                const visits = customer.visitCount || 1;
+                if (feedbackElem) {
+                    feedbackElem.innerHTML = `
+                        <div style="background: #e6fffa; border: 1px solid #38b2ac; color: #234e52; padding: 4px 8px; border-radius: 4px; font-size: 12px; margin-top: 4px;">
+                            <i class="fa fa-star" style="color: #d69e2e;"></i> <b>Khách quen!</b> Đã ghé quán <b>${visits}</b> lần • Tên: <b>${escapeHtml(customer.fullName)}</b>
+                        </div>`;
+                }
+            } else {
+                if (feedbackElem) {
+                    feedbackElem.innerHTML = `
+                        <div style="background: #ebf8ff; border: 1px solid #63b3ed; color: #2b6cb0; padding: 4px 8px; border-radius: 4px; font-size: 12px; margin-top: 4px;">
+                            <i class="fa fa-info-circle"></i> <b>Khách mới</b> ghé lần đầu
+                        </div>`;
+                }
+            }
+        } catch (err) {
+            if (feedbackElem) feedbackElem.innerHTML = '';
+        }
+    }, 300);
+};
+
+window.openCustomerInfoModalInOrder = async function() {
+    if (!currentOrder) {
+        Swal.fire({
+            icon: 'warning',
+            title: 'Chưa có đơn hàng',
+            text: 'Bàn hiện chưa có đơn hàng nào đang phục vụ!'
+        });
+        return;
+    }
+
+    try {
+        const ordRes = await fetchWithAuth(`/orders/${currentOrder.id}`);
+        const order = ordRes.data || currentOrder;
+        
+        let customer = null;
+        if (order.customerId) {
+            try {
+                const cusRes = await fetchWithAuth(`/customers/${order.customerId}`);
+                customer = cusRes.data;
+            } catch(e) {}
+        }
+
+        const cusName = (customer ? customer.fullName : order.customerName) || 'Khách vãng lai';
+        const cusPhone = (customer ? customer.phone : order.customerPhone) || '';
+        const visits = customer && customer.visitCount ? customer.visitCount : (order.visitCount || 1);
+        const tableName = (currentTable ? (currentTable.tableName || currentTable.name || ('Bàn ' + currentTable.id)) : 'Bàn ăn');
+        
+        const isWalkIn = !cusPhone || cusPhone === '0000000000' || cusPhone.startsWith('VL');
+        const visitBadge = (!isWalkIn && visits > 1)
+            ? `<span class="badge" style="background: #10b981; color: #fff; padding: 6px 10px; font-size:12px;"><i class="fa fa-star"></i> Khách quen! Đã ghé ${visits} lần</span>`
+            : (!isWalkIn)
+            ? `<span class="badge" style="background: #0ea5e9; color: #fff; padding: 6px 10px; font-size:12px;"><i class="fa fa-user"></i> Khách mới ghé lần đầu</span>`
+            : `<span class="badge" style="background: #64748b; color: #fff; padding: 6px 10px; font-size:12px;"><i class="fa fa-user"></i> Khách vãng lai</span>`;
+
+        const { value: formValues } = await Swal.fire({
+            title: `<div style="font-size:20px; font-weight:bold; color:#0284c7;"><i class="fa fa-user"></i> Thông Tin Khách Đang Ăn - ${escapeHtml(tableName)}</div>`,
+            html: `
+                <div style="text-align: left; font-size: 14px;">
+                    <div style="background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 10px; margin-bottom: 12px; display:flex; justify-content:space-between; align-items:center;">
+                        <div>
+                            <div style="font-weight:bold; color:#0369a1;">Mã đơn: #${order.orderCode || order.id}</div>
+                            <div style="font-size:12px; color:#64748b;">Bàn: ${escapeHtml(tableName)}</div>
+                        </div>
+                        <div>${visitBadge}</div>
+                    </div>
+
+                    <div class="form-group" style="margin-bottom:12px;">
+                        <label style="font-weight:bold; margin-bottom:4px; display:block;">Số điện thoại khách hàng</label>
+                        <input id="swal-order-cus-phone" class="swal2-input" style="width:100%; margin:0;" value="${escapeHtml(isWalkIn ? '' : cusPhone)}" placeholder="Ví dụ: 0987654321">
+                        <div id="swal-order-cus-phone-feedback" style="margin-top:4px;"></div>
+                    </div>
+
+                    <div class="form-group" style="margin-bottom:12px;">
+                        <label style="font-weight:bold; margin-bottom:4px; display:block;">Tên khách hàng <span class="text-danger" style="color:red;">*</span></label>
+                        <input id="swal-order-cus-name" class="swal2-input" style="width:100%; margin:0;" value="${escapeHtml(cusName)}" placeholder="Nhập tên khách hàng">
+                    </div>
+
+                    <div class="form-group" style="margin-bottom:12px;">
+                        <label style="font-weight:bold; margin-bottom:4px; display:block;">Ghi chú đơn hàng / Yêu cầu riêng</label>
+                        <input id="swal-order-note" class="swal2-input" style="width:100%; margin:0;" value="${escapeHtml(order.note || '')}" placeholder="Ghi chú món ăn, khẩu vị, thông tin thêm...">
+                    </div>
+                </div>
+            `,
+            didOpen: () => {
+                const phoneInput = document.getElementById('swal-order-cus-phone');
+                if (phoneInput) {
+                    phoneInput.addEventListener('input', () => {
+                        window.lookupCustomerByPhoneOrder(phoneInput.value, 'swal-order-cus-name', 'swal-order-cus-phone-feedback');
+                    });
+                }
+            },
+            showCancelButton: true,
+            confirmButtonText: '<i class="fa fa-save"></i> Lưu thông tin',
+            cancelButtonText: 'Đóng',
+            confirmButtonColor: '#0284c7',
+            preConfirm: () => {
+                const name = (document.getElementById('swal-order-cus-name').value || '').trim();
+                const phone = (document.getElementById('swal-order-cus-phone').value || '').trim() || '0000000000';
+                const note = (document.getElementById('swal-order-note').value || '').trim();
+                if (!name) {
+                    Swal.showValidationMessage('Tên khách hàng không được để trống!');
+                    return false;
+                }
+                return { name, phone, note };
+            }
+        });
+
+        if (!formValues) return;
+
+        // Check-in thông tin khách hàng mới hoặc cập nhật
+        const cusRes = await fetchWithAuth('/customers/check-in', {
+            method: 'POST',
+            body: JSON.stringify({ fullName: formValues.name, phone: formValues.phone })
+        });
+        const newCustomer = cusRes.data;
+        if (newCustomer && newCustomer.id) {
+            await fetchWithAuth(`/orders/${order.id}/customer/${newCustomer.id}`, {
+                method: 'PUT'
+            }).catch(e => console.warn(e));
+        }
+
+        await fetchWithAuth(`/orders/${order.id}/note`, {
+            method: 'PUT',
+            body: JSON.stringify({ note: formValues.note })
+        });
+
+        currentOrder.customerName = formValues.name;
+        currentOrder.customerPhone = formValues.phone;
+        currentOrder.note = formValues.note;
+
+        try {
+            const updatedOrd = await fetchWithAuth(`/orders/${order.id}`);
+            if (updatedOrd.data) {
+                currentOrder = updatedOrd.data;
+            }
+        } catch(e) {}
+
+        updateTableLabel();
+
+        Swal.fire({
+            icon: 'success',
+            title: 'Cập nhật thành công! 🎉',
+            text: `Đã lưu thông tin khách hàng cho ${tableName}`,
+            timer: 1500,
+            showConfirmButton: false
+        });
+
+    } catch (err) {
+        Swal.fire({
+            icon: 'error',
+            title: 'Lỗi cập nhật',
+            text: err.message,
+            confirmButtonColor: '#d33'
+        });
+    }
+};
 
 async function checkTableFutureReservations(tableId) {
     try {
@@ -176,7 +403,6 @@ async function checkTableFutureReservations(tableId) {
         if (btnOrderViewFutureRes && tableResList.length > 0) {
             btnOrderViewFutureRes.style.display = 'inline-flex';
             
-            // Kiểm tra xem có ca nào sắp tới trong vòng 60 phút không
             const now = new Date();
             const todayStr = now.toISOString().split('T')[0];
             const currentMin = now.getHours() * 60 + now.getMinutes();
@@ -786,6 +1012,8 @@ window.switchActiveTable = async function(tableId) {
             // Chuyển sang bàn đó để xem đơn và tiếp tục order
             currentTable = table;
             currentOrder = activeOrder;
+            sessionStorage.setItem('posTableId', table.id);
+            if (activeOrder) sessionStorage.setItem('posOrderId', activeOrder.id);
             updateTableLabel();
             await loadOrderItems(activeOrder.id);
 
@@ -827,6 +1055,8 @@ window.switchActiveTable = async function(tableId) {
                     });
 
                     currentTable = table;
+                    sessionStorage.setItem('posTableId', table.id);
+                    if (currentOrder) sessionStorage.setItem('posOrderId', currentOrder.id);
                     updateTableLabel();
 
                     Swal.fire({
@@ -947,6 +1177,8 @@ async function createNewOrderForTable(table) {
 
         currentTable = table;
         currentOrder = ordRes.data;
+        sessionStorage.setItem('posTableId', table.id);
+        if (ordRes.data) sessionStorage.setItem('posOrderId', ordRes.data.id);
         updateTableLabel();
         cartItems = [];
         updateCartUI();
@@ -1175,6 +1407,120 @@ window.cancelOrder = async function(e) {
     }
 };
 
+// Biến toàn cục quản lý chiết khấu / giảm giá khi thanh toán
+window.checkoutSubtotal = 0;
+window.checkoutDepositAmount = 0;
+window.checkoutDiscountType = 'PERCENT'; // 'PERCENT' hoặc 'AMOUNT'
+window.checkoutDiscountPercent = 0;
+window.checkoutDiscountCash = 0;
+
+window.setDiscountType = function(type) {
+    window.checkoutDiscountType = type;
+    const btnPercent = document.getElementById('btnDiscountTypePercent');
+    const btnAmount = document.getElementById('btnDiscountTypeAmount');
+    const unitLabel = document.getElementById('discountUnitLabel');
+    const quickPercentPills = document.getElementById('quickDiscountPills');
+    const quickAmountPills = document.getElementById('quickDiscountAmountPills');
+    const input = document.getElementById('checkoutDiscountInput');
+
+    if (type === 'PERCENT') {
+        if (btnPercent) { btnPercent.className = 'btn btn-danger btn-xs'; }
+        if (btnAmount) { btnAmount.className = 'btn btn-default btn-xs'; }
+        if (unitLabel) unitLabel.innerText = '%';
+        if (quickPercentPills) quickPercentPills.style.display = 'flex';
+        if (quickAmountPills) quickAmountPills.style.display = 'none';
+        if (input) {
+            input.value = window.checkoutDiscountPercent || 0;
+            input.placeholder = 'Nhập số % giảm...';
+        }
+    } else {
+        if (btnPercent) { btnPercent.className = 'btn btn-default btn-xs'; }
+        if (btnAmount) { btnAmount.className = 'btn btn-danger btn-xs'; }
+        if (unitLabel) unitLabel.innerText = '₫';
+        if (quickPercentPills) quickPercentPills.style.display = 'none';
+        if (quickAmountPills) quickAmountPills.style.display = 'flex';
+        if (input) {
+            input.value = window.checkoutDiscountCash || 0;
+            input.placeholder = 'Nhập số tiền VNĐ giảm...';
+        }
+    }
+    recalculateCheckoutTotal();
+};
+
+window.applyQuickDiscountPercent = function(val) {
+    window.setDiscountType('PERCENT');
+    const input = document.getElementById('checkoutDiscountInput');
+    if (input) input.value = val;
+    recalculateCheckoutTotal();
+};
+
+window.applyQuickDiscountAmount = function(val) {
+    window.setDiscountType('AMOUNT');
+    const input = document.getElementById('checkoutDiscountInput');
+    if (input) input.value = val;
+    recalculateCheckoutTotal();
+};
+
+window.recalculateCheckoutTotal = function() {
+    const input = document.getElementById('checkoutDiscountInput');
+    const inputVal = parseFloat(input?.value) || 0;
+
+    let discountMoney = 0;
+    if (window.checkoutDiscountType === 'PERCENT') {
+        const percent = Math.min(100, Math.max(0, inputVal));
+        window.checkoutDiscountPercent = percent;
+        discountMoney = Math.round(window.checkoutSubtotal * percent / 100);
+    } else {
+        const cash = Math.min(window.checkoutSubtotal, Math.max(0, inputVal));
+        window.checkoutDiscountCash = cash;
+        discountMoney = cash;
+    }
+
+    // Hiển thị ghi chú số tiền giảm quy đổi
+    const notice = document.getElementById('discountConvertedNotice');
+    if (notice) {
+        if (discountMoney > 0) {
+            notice.style.display = 'block';
+            notice.innerText = `Số tiền giảm: -${discountMoney.toLocaleString()} ₫`;
+        } else {
+            notice.style.display = 'none';
+        }
+    }
+
+    // Cập nhật các dòng tổng kết
+    const subtotalEl = document.getElementById('checkoutSubtotalDisplay');
+    if (subtotalEl) subtotalEl.innerText = `${window.checkoutSubtotal.toLocaleString()} ₫`;
+
+    const discountRow = document.getElementById('checkoutDiscountRow');
+    const discountDisplay = document.getElementById('checkoutDiscountDisplay');
+    if (discountRow && discountDisplay) {
+        if (discountMoney > 0) {
+            discountRow.style.display = 'flex';
+            const percentLabel = window.checkoutDiscountType === 'PERCENT' ? ` (${window.checkoutDiscountPercent}%)` : '';
+            discountDisplay.innerText = `-${discountMoney.toLocaleString()} ₫${percentLabel}`;
+        } else {
+            discountRow.style.display = 'none';
+        }
+    }
+
+    const depositRow = document.getElementById('checkoutDepositRow');
+    const depositDisplay = document.getElementById('checkoutDepositDisplay');
+    if (depositRow && depositDisplay) {
+        if (window.checkoutDepositAmount > 0) {
+            depositRow.style.display = 'flex';
+            depositDisplay.innerText = `-${window.checkoutDepositAmount.toLocaleString()} ₫`;
+        } else {
+            depositRow.style.display = 'none';
+        }
+    }
+
+    let finalTotal = window.checkoutSubtotal - discountMoney - window.checkoutDepositAmount;
+    if (finalTotal < 0) finalTotal = 0;
+
+    const totalEl = document.getElementById('checkoutTotal');
+    if (totalEl) totalEl.innerText = `THỰC THU: ${finalTotal.toLocaleString()} VNĐ`;
+};
+
 /* THANH TOÁN TIỆN LỢI */
 window.payOrder = function(e) {
     if(e) e.preventDefault();
@@ -1201,7 +1547,7 @@ window.payOrder = function(e) {
     // Modal Info
     document.getElementById('checkoutTableLabel').innerText = `Bàn: ${currentTable.tableName || currentTable.id}`;
     document.getElementById('checkoutCustomerName').innerText = currentOrder.customerName || 'Khách vãng lai';
-    document.getElementById('checkoutUserName').innerText = currentOrder.username || 'Nhân viên';
+    document.getElementById('checkoutUserName').innerText = currentOrder.username || 'Nhân viên thu ngân';
     
     let html = '';
     let total = 0;
@@ -1210,30 +1556,32 @@ window.payOrder = function(e) {
         const price = p.price || item.unitPrice || 0;
         total += price * item.quantity;
         html += `<div style="display:flex; justify-content:space-between; margin-bottom:6px; font-size:14px;">
-                    <span>${item.quantity}x ${p.name || 'Món ăn'}</span>
+                    <span>${item.quantity}x ${escapeHtml(p.name || item.productName || 'Món ăn')}</span>
                     <span>${(price * item.quantity).toLocaleString()} ₫</span>
                  </div>`;
     });
     
-    // Tiền cọc trước
-    window.currentDepositAmount = 0;
+    // Lưu subtotal
+    window.checkoutSubtotal = total;
+
+    // Tiền cọc trước nếu có
+    window.checkoutDepositAmount = 0;
     if (currentOrder.note && currentOrder.note.includes('Đã cọc:')) {
         const match = currentOrder.note.match(/Đã cọc:\s*(\d+)/);
         if (match && match[1]) {
-            window.currentDepositAmount = parseInt(match[1]);
-            html += `<hr style="margin:5px 0;">
-                     <div style="display:flex; justify-content:space-between; color: #17a2b8; font-weight:bold; font-size:14px;">
-                        <span>Tiền đã cọc trước</span>
-                        <span>- ${window.currentDepositAmount.toLocaleString()} ₫</span>
-                     </div>`;
+            window.checkoutDepositAmount = parseInt(match[1]);
         }
     }
     
-    let finalTotal = total - window.currentDepositAmount;
-    if (finalTotal < 0) finalTotal = 0;
-    
-    document.getElementById('checkoutSummary').innerHTML = html;
-    document.getElementById('checkoutTotal').innerText = `THỰC THU: ${finalTotal.toLocaleString()} VNĐ`;
+    // Đặt lại giảm giá mặc định về 0%
+    window.checkoutDiscountPercent = 0;
+    window.checkoutDiscountCash = 0;
+    const input = document.getElementById('checkoutDiscountInput');
+    if (input) input.value = 0;
+    window.setDiscountType('PERCENT');
+
+    document.getElementById('checkoutSummary').innerHTML = html || '<p class="text-muted text-center">Chưa có món nào</p>';
+    recalculateCheckoutTotal();
     
     $('#checkoutModal').modal('show');
 };
@@ -1242,13 +1590,25 @@ window.confirmCheckout = async function() {
     const paymentMethod = document.getElementById('paymentMethod').value;
     
     try {
-        // 1. Tạo Invoice cho Order này
+        let discountPercentToSend = 0;
+        let discountAmountToSend = window.checkoutDepositAmount || 0;
+
+        if (window.checkoutDiscountType === 'PERCENT') {
+            discountPercentToSend = window.checkoutDiscountPercent || 0;
+            // Tiền giảm trực tiếp (gồm tiền cọc trước nếu có)
+            discountAmountToSend = window.checkoutDepositAmount || 0;
+        } else {
+            discountPercentToSend = 0;
+            discountAmountToSend = (window.checkoutDiscountCash || 0) + (window.checkoutDepositAmount || 0);
+        }
+
+        // 1. Tạo Invoice cho Order này với thông tin giảm giá
         const invRes = await fetchWithAuth(`/invoices/add`, {
             method: 'POST',
             body: JSON.stringify({
                 orderId: currentOrder.id,
-                discountPercent: 0,
-                discountAmount: window.currentDepositAmount || 0
+                discountPercent: discountPercentToSend,
+                discountAmount: discountAmountToSend
             })
         });
         const invoiceId = invRes.data.id;
@@ -1274,6 +1634,8 @@ window.confirmCheckout = async function() {
         const inv = invDetails.data;
         
         $('#checkoutModal').modal('hide');
+        sessionStorage.removeItem('posOrderId');
+        sessionStorage.removeItem('posTableId');
         currentOrder = null;
         currentTable = null;
         cartItems = [];
@@ -1356,16 +1718,21 @@ function printInvoice(inv) {
                     </tbody>
                     <tfoot>
                         <tr>
-                            <td colspan="4" class="text-end"><strong>TỔNG TIỀN:</strong></td>
+                            <td colspan="4" class="text-end"><strong>TỔNG TIỀN MÓN (GỐC):</strong></td>
                             <td class="text-end"><strong>${(inv.subtotal || 0).toLocaleString()} ₫</strong></td>
                         </tr>
+                        ${inv.discountPercent && inv.discountPercent > 0 ? `
+                        <tr>
+                            <td colspan="4" class="text-end" style="color:#d10024;"><strong>GIẢM GIÁ (${inv.discountPercent}%):</strong></td>
+                            <td class="text-end" style="color:#d10024;"><strong>- ${Math.round((inv.subtotal || 0) * inv.discountPercent / 100).toLocaleString()} ₫</strong></td>
+                        </tr>` : ''}
                         ${inv.discountAmount && inv.discountAmount > 0 ? `
                         <tr>
-                            <td colspan="4" class="text-end" style="color:#17a2b8;"><strong>ĐÃ CỌC TRƯỚC:</strong></td>
-                            <td class="text-end" style="color:#17a2b8;"><strong>- ${(inv.discountAmount).toLocaleString()} ₫</strong></td>
+                            <td colspan="4" class="text-end" style="color:#16a34a;"><strong>GIẢM GIÁ / ĐÃ CỌC:</strong></td>
+                            <td class="text-end" style="color:#16a34a;"><strong>- ${(inv.discountAmount).toLocaleString()} ₫</strong></td>
                         </tr>` : ''}
-                        <tr>
-                            <td colspan="4" class="text-end"><strong>THỰC THU:</strong></td>
+                        <tr style="border-top: 2px solid #000;">
+                            <td colspan="4" class="text-end" style="font-size: 15px;"><strong>THỰC THU:</strong></td>
                             <td class="text-end" style="color: #D10024; font-size: 16px;"><strong>${(inv.finalAmount || inv.totalAmount || 0).toLocaleString()} ₫</strong></td>
                         </tr>
                     </tfoot>
@@ -1459,7 +1826,17 @@ window.printTemporaryBill = function(e) {
         }
     }
 
-    let finalTotal = total - depositAmount;
+    let discountDeduction = 0;
+    let discountLabel = '';
+    if (window.checkoutDiscountType === 'PERCENT' && window.checkoutDiscountPercent > 0) {
+        discountDeduction = Math.round(total * (window.checkoutDiscountPercent / 100));
+        discountLabel = `Giảm giá (${window.checkoutDiscountPercent}%):`;
+    } else if (window.checkoutDiscountType === 'AMOUNT' && window.checkoutDiscountCash > 0) {
+        discountDeduction = window.checkoutDiscountCash;
+        discountLabel = 'Giảm giá (tiền mặt):';
+    }
+
+    let finalTotal = total - discountDeduction - depositAmount;
     if (finalTotal < 0) finalTotal = 0;
 
     const printTimeStr = new Date().toLocaleString('vi-VN');
@@ -1542,6 +1919,11 @@ window.printTemporaryBill = function(e) {
                         <span>Tổng tiền món:</span>
                         <span>${total.toLocaleString()} ₫</span>
                     </div>
+                    ${discountDeduction > 0 ? `
+                    <div class="total-row" style="color: #000;">
+                        <span>${discountLabel}</span>
+                        <span>- ${discountDeduction.toLocaleString()} ₫</span>
+                    </div>` : ''}
                     ${depositAmount > 0 ? `
                     <div class="total-row" style="color: #000;">
                         <span>Đã cọc trước:</span>
@@ -1913,6 +2295,12 @@ window.openFutureReservationModal = async function() {
                 note: noteText.trim()
             })
         });
+
+        // Tự động đồng bộ trạng thái bàn sang RESERVED
+        await fetchWithAuth(`/tables/${tableId}/status`, {
+            method: 'PATCH',
+            body: JSON.stringify({ status: 'RESERVED' })
+        }).catch(e => console.warn(e));
 
         Swal.fire({
             icon: 'success',

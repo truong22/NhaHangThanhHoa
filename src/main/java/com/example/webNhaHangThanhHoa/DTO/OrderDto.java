@@ -24,6 +24,10 @@ public class OrderDto {
 
     private String customerName;
 
+    private String customerPhone;
+
+    private Integer visitCount;
+
     private Long userId;
 
     private String username;

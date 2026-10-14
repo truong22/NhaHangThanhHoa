@@ -7,4 +7,7 @@ import java.util.List;
 public interface ICustomerService {
     customers checkInCustomer(CustomerRequest request);
     List<customers> getAllCustomers();
+    customers getCustomerById(Long id);
+    customers getCustomerByPhone(String phone);
+    customers updateCustomer(Long id, CustomerRequest request);
 }

@@ -3,6 +3,9 @@
 <head>
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
     <title>Thực đơn Gọi Món - Nhà Hàng Thanh Hóa</title>
     <script>
@@ -875,6 +878,12 @@
                 <i class="fa fa-chevron-down" style="font-size: 11px; margin-left: 4px;"></i>
             </div>
             <span id="order-kitchen-status-badge" style="display:none; font-size:12px; font-weight:bold; padding:4px 10px; border-radius:6px; margin-left:6px; align-items:center; gap:4px; height:32px;"></span>
+            <button id="current-customer-btn" onclick="openCustomerInfoModalInOrder()" class="btn-header-action" style="display:none; background: #0284c7; color: #fff; font-weight: 600; padding: 4px 12px; border-radius: 6px; cursor: pointer; align-items: center; gap: 6px; height: 32px; border: 1px solid #38bdf8;" title="Nhấn để xem và sửa thông tin khách đang ăn">
+                <i class="fa fa-user"></i>
+                <span id="current-customer-name">Khách ăn</span>
+                <span id="current-customer-visit-badge" class="badge" style="background: #10b981; color: #fff; font-size: 11px; margin-left: 2px; display: none;"></span>
+                <i class="fa fa-pencil" style="font-size: 10px; margin-left: 4px; opacity: 0.8;"></i>
+            </button>
             <div class="header-title-info">
                 <span>🍽️ Nhà Hàng Thanh Hóa - 88 Hải Tiến</span>
             </div>
@@ -1015,8 +1024,70 @@
                     <div id="checkoutSummary" style="margin: 10px 0; max-height: 220px; overflow-y: auto; border: 1px solid #eee; padding: 10px; border-radius: 6px;">
                         <!-- items -->
                     </div>
-                    <hr>
-                    <h3 id="checkoutTotal" style="color: var(--haidilao-red); text-align: right; font-weight:bold; margin: 10px 0;">THỰC THU: 0 VNĐ</h3>
+                    <!-- KHUNG GIẢM GIÁ / KHUYẾN MÃI -->
+                    <div class="discount-container" style="background: #fef2f2; border: 1px dashed #ef4444; border-radius: 8px; padding: 10px 12px; margin: 12px 0;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                            <label style="margin: 0; font-weight: bold; font-size: 13px; color: #b91c1c;">
+                                <i class="fa fa-percent me-1"></i> GIẢM GIÁ / CHIẾT KHẤU:
+                            </label>
+                            <div class="btn-group btn-group-xs" role="group">
+                                <button type="button" class="btn btn-danger btn-xs" id="btnDiscountTypePercent" onclick="setDiscountType('PERCENT')" style="font-size: 11px; font-weight: bold; padding: 2px 8px;">
+                                    Theo %
+                                </button>
+                                <button type="button" class="btn btn-default btn-xs" id="btnDiscountTypeAmount" onclick="setDiscountType('AMOUNT')" style="font-size: 11px; font-weight: bold; padding: 2px 8px;">
+                                    Theo tiền (VNĐ)
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Các mức % chọn nhanh -->
+                        <div id="quickDiscountPills" style="display: flex; gap: 5px; margin-bottom: 8px; flex-wrap: wrap;">
+                            <button type="button" class="btn btn-default btn-xs" onclick="applyQuickDiscountPercent(0)" style="border-radius: 12px; font-size: 11px; padding: 2px 8px;">0%</button>
+                            <button type="button" class="btn btn-default btn-xs" onclick="applyQuickDiscountPercent(5)" style="border-radius: 12px; font-size: 11px; padding: 2px 8px;">5%</button>
+                            <button type="button" class="btn btn-default btn-xs" onclick="applyQuickDiscountPercent(10)" style="border-radius: 12px; font-size: 11px; padding: 2px 8px;">10%</button>
+                            <button type="button" class="btn btn-default btn-xs" onclick="applyQuickDiscountPercent(15)" style="border-radius: 12px; font-size: 11px; padding: 2px 8px;">15%</button>
+                            <button type="button" class="btn btn-default btn-xs" onclick="applyQuickDiscountPercent(20)" style="border-radius: 12px; font-size: 11px; padding: 2px 8px;">20%</button>
+                            <button type="button" class="btn btn-default btn-xs" onclick="applyQuickDiscountPercent(30)" style="border-radius: 12px; font-size: 11px; padding: 2px 8px;">30%</button>
+                            <button type="button" class="btn btn-default btn-xs" onclick="applyQuickDiscountPercent(50)" style="border-radius: 12px; font-size: 11px; padding: 2px 8px;">50%</button>
+                        </div>
+
+                        <!-- Các mức tiền VNĐ chọn nhanh -->
+                        <div id="quickDiscountAmountPills" style="display: none; gap: 5px; margin-bottom: 8px; flex-wrap: wrap;">
+                            <button type="button" class="btn btn-default btn-xs" onclick="applyQuickDiscountAmount(0)" style="border-radius: 12px; font-size: 11px; padding: 2px 8px;">0 ₫</button>
+                            <button type="button" class="btn btn-default btn-xs" onclick="applyQuickDiscountAmount(10000)" style="border-radius: 12px; font-size: 11px; padding: 2px 8px;">10k</button>
+                            <button type="button" class="btn btn-default btn-xs" onclick="applyQuickDiscountAmount(20000)" style="border-radius: 12px; font-size: 11px; padding: 2px 8px;">20k</button>
+                            <button type="button" class="btn btn-default btn-xs" onclick="applyQuickDiscountAmount(50000)" style="border-radius: 12px; font-size: 11px; padding: 2px 8px;">50k</button>
+                            <button type="button" class="btn btn-default btn-xs" onclick="applyQuickDiscountAmount(100000)" style="border-radius: 12px; font-size: 11px; padding: 2px 8px;">100k</button>
+                        </div>
+
+                        <div class="input-group">
+                            <input type="number" id="checkoutDiscountInput" class="form-control" placeholder="Nhập mức giảm..." min="0" value="0" oninput="recalculateCheckoutTotal()" style="height: 36px; font-weight: bold; font-size: 15px; color: #d10024;">
+                            <span class="input-group-addon" id="discountUnitLabel" style="font-weight: bold; background: #fff; font-size: 13px; color: #b91c1c;">%</span>
+                        </div>
+                        <div id="discountConvertedNotice" style="font-size: 12px; color: #dc2626; font-weight: bold; margin-top: 4px; text-align: right; display: none;">
+                            Tiền giảm: -0 ₫
+                        </div>
+                    </div>
+
+                    <!-- BẢNG TỔNG KẾT TÍNH TIỀN CHI TIẾT -->
+                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 14px; margin-bottom: 10px; font-size: 14px;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 4px; color: #64748b;">
+                            <span>Tổng tiền món (gốc):</span>
+                            <span id="checkoutSubtotalDisplay" style="font-weight: bold; color: #334155;">0 ₫</span>
+                        </div>
+                        <div id="checkoutDiscountRow" style="display: none; justify-content: space-between; margin-bottom: 4px; color: #dc2626;">
+                            <span>Giảm giá:</span>
+                            <span id="checkoutDiscountDisplay" style="font-weight: bold;">-0 ₫</span>
+                        </div>
+                        <div id="checkoutDepositRow" style="display: none; justify-content: space-between; margin-bottom: 4px; color: #0284c7;">
+                            <span>Tiền đã cọc trước:</span>
+                            <span id="checkoutDepositDisplay" style="font-weight: bold;">-0 ₫</span>
+                        </div>
+                        <div style="border-top: 1px dashed #cbd5e1; margin-top: 6px; padding-top: 6px; display: flex; justify-content: space-between; align-items: center;">
+                            <strong style="font-size: 15px; color: #1e293b;">THỰC THU:</strong>
+                            <strong id="checkoutTotal" style="color: var(--haidilao-red); font-size: 20px; font-weight: 900;">0 VNĐ</strong>
+                        </div>
+                    </div>
                     
                     <div class="form-group" style="margin-top:15px;">
                         <label><strong>Phương thức thanh toán:</strong></label>
@@ -1046,6 +1117,6 @@
     <script src="js/jquery.min.js"></script>
     <script src="js/bootstrap.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-    <script src="order-app.js"></script>
+    <script src="order-app.js?v=2.1"></script>
 </body>
 </html>

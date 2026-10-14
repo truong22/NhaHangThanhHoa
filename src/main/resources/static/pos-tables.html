@@ -3,6 +3,9 @@
 <head>
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>Sơ Đồ Bàn - Quản Lý Nhà Hàng</title>
     <script>
         (function() {
@@ -237,9 +240,11 @@
             <h4 class="modal-title" id="modalTableName" style="color: white;">MỞ BÀN</h4>
           </div>
           <div class="modal-body">
+            <div id="openTableFutureResNotice"></div>
             <div class="form-group">
                 <label>Số điện thoại khách hàng (Tùy chọn)</label>
                 <input type="text" class="input" id="customerPhone" placeholder="Ví dụ: 0987654321">
+                <div id="customerPhoneFeedback" style="margin-top: 5px; font-size: 13px;"></div>
             </div>
             <div class="form-group">
                 <label>Tên khách hàng (Tùy chọn)</label>
@@ -337,6 +342,8 @@
             window.location.href = '/login';
         }
 
+        let allTablesData = [];
+        let allActiveOrdersData = [];
         let allReservationsData = [];
 
         async function loadTables() {
@@ -349,8 +356,10 @@
                 
                 const tables = tableRes.data || [];
                 const allOrders = orderRes.data || [];
+                allTablesData = tables;
                 allReservationsData = resRes.data || [];
                 const activeOrders = allOrders.filter(o => o.status !== 'COMPLETED' && o.status !== 'CANCELLED');
+                allActiveOrdersData = activeOrders;
 
                 const roles = JSON.parse(localStorage.getItem('userRoles') || '[]');
                 const isCashierOrAdmin = roles.some(r => typeof r === 'string' && (r.toUpperCase().includes('ADMIN') || r.toUpperCase().includes('CASHIER')));
@@ -420,17 +429,25 @@
                         r.status !== 'CANCELLED' && 
                         r.status !== 'COMPLETED'
                     );
+                    tableReservations.sort((a, b) => ((a.reservationDate || '') + ' ' + (a.startTime || '')).localeCompare((b.reservationDate || '') + ' ' + (b.startTime || '')));
+                    const activeRes = tableReservations[0];
+                    const activeResId = activeRes ? activeRes.id : null;
 
-                    // Tìm ca đặt sớm nhất sắp tới trong hôm nay (trong vòng 60 phút)
-                    let upcomingSoon = null;
+                    // Tìm ca đặt cần giữ bàn (trong vòng 60 phút tính tới giờ hẹn hoặc đang trong khung giờ hẹn)
+                    let holdingRes = null;
                     tableReservations.forEach(r => {
                         if (r.reservationDate === todayStr && r.startTime) {
                             const [h, m] = r.startTime.split(':').map(Number);
                             const resMin = h * 60 + m;
                             const diff = resMin - currentMinutes;
-                            if (diff >= -30 && diff <= 60) {
-                                if (!upcomingSoon || diff < upcomingSoon.diff) {
-                                    upcomingSoon = { ...r, diff: diff };
+                            let endMin = resMin + 120;
+                            if (r.endTime) {
+                                const [eh, em] = r.endTime.split(':').map(Number);
+                                endMin = eh * 60 + em;
+                            }
+                            if (diff <= 60 && currentMinutes <= endMin) {
+                                if (!holdingRes || diff < holdingRes.diff) {
+                                    holdingRes = { ...r, diff: diff };
                                 }
                             }
                         }
@@ -439,31 +456,15 @@
                     const rawName = String(t.tableName || t.name || t.id).trim();
                     const displayName = rawName.toLowerCase().startsWith('bàn') ? rawName : ('Bàn ' + rawName);
 
-                    if (t.status === 'RESERVED') {
-                        html += `
-                        <div class="col-md-3 col-sm-4 col-xs-6" style="margin-bottom: 20px;">
-                            <div class="table-card table-reserved" style="border: 2px solid #17a2b8; background-color:#e0f7fa; position: relative; min-height: 200px; padding: 12px; display:flex; flex-direction:column; justify-content:space-between;" onclick="handleReservedTableAction(event, ${t.id}, '${escapeHtml(displayName)}', ${activeOrder ? activeOrder.id : 'null'})">
-                                <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
-                                    <span class="badge" style="background:#17a2b8; color:#fff; font-size:10px;">ĐÃ ĐẶT TRƯỚC</span>
-                                    <button onclick="cancelReservation(event, ${t.id}, ${activeOrder ? activeOrder.id : 'null'})" style="background: #dc3545; color: white; border: none; border-radius: 4px; padding: 2px 8px; font-size: 11px; cursor: pointer; z-index: 5;">Hủy</button>
-                                </div>
-                                <div>
-                                    <i class="fa fa-calendar table-icon" style="color: #17a2b8; margin: 4px 0;"></i>
-                                    <h3 style="margin: 2px 0;">${escapeHtml(displayName)}</h3>
-                                    <p style="margin: 0; color: #0e7490; font-weight: bold;">Đang giữ bàn</p>
-                                    <small class="text-muted">Chờ khách đến nhận bàn</small>
-                                </div>
-                                <div style="width:100%; margin-top:6px; display:flex; flex-direction:column; gap:4px;">
-                                    <button class="btn btn-info btn-xs w-100" style="width:100%; font-size:11px; font-weight:bold; background:#0e7490; border:none; padding:4px 6px; border-radius:4px; color:#fff;" onclick="handleReservedTableAction(event, ${t.id}, '${escapeHtml(displayName)}', ${activeOrder ? activeOrder.id : 'null'})">
-                                        <i class="fa fa-check-circle"></i> Khách đến - Mở bàn
-                                    </button>
-                                    <button class="btn btn-warning btn-xs w-100" style="width:100%; font-size:10px; font-weight:bold; background:#f59e0b; border:none; padding:3px 6px; border-radius:4px; color:#fff;" onclick="event.stopPropagation(); openForWalkInGuest(${t.id}, '${escapeHtml(displayName)}')">
-                                        <i class="fa fa-cutlery"></i> Cho khách mới vào ăn
-                                    </button>
-                                </div>
-                            </div>
-                        </div>`;
-                    } else if (activeOrder) {
+                    if (activeOrder) {
+                        // Tự động đồng bộ lại trạng thái DB thành OCCUPIED nếu bàn có đơn mà DB bị lệch
+                        if (t.status !== 'OCCUPIED') {
+                            fetchWithAuth(`/tables/${t.id}/status`, {
+                                method: 'PATCH',
+                                body: JSON.stringify({ status: 'OCCUPIED' })
+                            }).catch(e => console.warn(e));
+                        }
+
                         // BÀN ĐANG PHỤC VỤ (CÓ KHÁCH ĐANG DÙNG BỮA)
                         html += `
                         <div class="col-md-3 col-sm-4 col-xs-6" style="margin-bottom: 20px;">
@@ -488,6 +489,14 @@
                                         <p style="margin: 0; color: #0284c7; font-weight: bold; font-size: 13px;"><i class="fa fa-clock-o"></i> Chờ bếp nhận đơn</p>
                                     `}
                                     <small class="text-muted">Mã ĐH: #${activeOrder.orderCode}</small>
+                                    <div style="font-size: 11px; color: #1e40af; background: #eff6ff; border: 1px dashed #93c5fd; border-radius: 4px; padding: 4px 6px; margin: 4px 0; text-align: left; cursor: pointer;" onclick="event.stopPropagation(); viewEditDiningCustomerPos(${activeOrder.id}, '${escapeHtml(displayName)}')" title="Nhấn để xem và sửa thông tin khách ăn">
+                                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                                            <span><i class="fa fa-user"></i> <b>${escapeHtml(activeOrder.customerName || 'Khách vãng lai')}</b></span>
+                                            ${activeOrder.visitCount ? `<span class="badge" style="background:#0284c7; font-size:9px;">Ghé ${activeOrder.visitCount} lần</span>` : ''}
+                                        </div>
+                                        ${activeOrder.customerPhone && activeOrder.customerPhone !== '0000000000' ? `<div style="font-size:10px; color:#64748b;"><i class="fa fa-phone"></i> ${escapeHtml(activeOrder.customerPhone)}</div>` : ''}
+                                        <div style="font-size: 10px; color: #0284c7; margin-top: 1px;"><i class="fa fa-pencil"></i> Xem & sửa thông tin khách</div>
+                                    </div>
                                 </div>
 
                                 <!-- Bottom status & ca sau -->
@@ -500,69 +509,97 @@
                                         `
                                     ) : ''}
 
-                                    ${upcomingSoon ? `
+                                    ${holdingRes ? `
                                         <div style="margin-top: 4px; padding: 3px 6px; background: #fee2e2; border: 1px solid #f87171; border-radius: 4px; color: #dc2626; font-size: 11px; font-weight: bold;">
-                                            🔥 Ca sau: ${upcomingSoon.startTime.slice(0,5)} (còn ~${Math.max(0, upcomingSoon.diff)}p)
+                                            🔥 Ca sau: ${holdingRes.startTime.slice(0,5)} (còn ~${Math.max(0, holdingRes.diff)}p)
                                         </div>
                                     ` : ''}
                                 </div>
                             </div>
                         </div>`;
-                    } else {
-                        // BÀN TRỐNG
-                        if (upcomingSoon) {
-                            // Bàn trống SẮP CÓ KHÁCH ĐẶT ĐẾN GIỜ (trong vòng 60 phút)
-                            html += `
-                            <div class="col-md-3 col-sm-4 col-xs-6" style="margin-bottom: 20px;">
-                                <div class="table-card table-warning-res" style="position: relative; min-height: 200px; padding: 12px; display: flex; flex-direction: column; justify-content: space-between;" onclick="handleEmptyTableClick(event, ${t.id}, '${escapeHtml(displayName)}', true, '${upcomingSoon.startTime.slice(0,5)}', '${escapeHtml(upcomingSoon.customerName || 'Khách đặt')}', ${upcomingSoon.diff}, ${upcomingSoon.id || 'null'}, '${escapeHtml(upcomingSoon.customerPhone || '')}', '${escapeHtml(upcomingSoon.note || '')}')">
-                                    <div style="text-align: right; width: 100%;">
-                                        ${tableReservations.length > 0 && isCashierOrAdmin ? `
-                                            <button onclick="viewFutureReservations(event, ${t.id}, '${escapeHtml(displayName)}')" class="btn btn-info btn-xs" style="font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 4px; background-color:#d97706; border:none;" title="Xem các ca đặt trước"><i class="fa fa-eye"></i> Xem ca đặt (${tableReservations.length})</button>
-                                        ` : ''}
-                                    </div>
-
-                                    <div>
-                                        <i class="fa fa-clock-o table-icon" style="color: #d97706; margin-bottom: 4px;"></i>
-                                        <h3 style="color: #d97706; margin: 2px 0;">${escapeHtml(displayName)}</h3>
-                                        <span class="badge" style="background: #ff9800; color: #fff; font-size: 11px; padding: 3px 7px; border-radius: 8px;">⚠️ CHUẨN BỊ ĐÓN KHÁCH</span>
-                                        <p style="color: #b45309; font-weight: bold; margin: 4px 0 0 0; font-size: 12px;">Lúc ${upcomingSoon.startTime.slice(0,5)}: ${escapeHtml(upcomingSoon.customerName || 'Khách đặt')}</p>
-                                    </div>
-
-                                    <div style="margin-top: 4px;">
-                                        <small style="color: #b45309; font-weight: bold;">(Còn khoảng ${Math.max(0, upcomingSoon.diff)} phút)</small>
-                                        <div style="margin-top: 4px;">
-                                            <span class="btn btn-success btn-xs" style="font-size:10px; padding: 2px 6px; border-radius: 4px;"><i class="fa fa-sign-in"></i> Nhấn để đón khách</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>`;
-                        } else {
-                            // BÀN TRỐNG THÔNG THƯỜNG
-                            html += `
-                            <div class="col-md-3 col-sm-4 col-xs-6" style="margin-bottom: 20px;">
-                                <div class="table-card table-empty" style="position: relative; min-height: 200px; padding: 12px; display: flex; flex-direction: column; justify-content: space-between;" onclick="handleEmptyTableClick(event, ${t.id}, '${escapeHtml(displayName)}', false)">
-                                    <div style="text-align: right; width: 100%;">
-                                        ${tableReservations.length > 0 ? (
-                                            isCashierOrAdmin ? `
-                                                <button onclick="viewFutureReservations(event, ${t.id}, '${escapeHtml(displayName)}')" class="btn btn-default btn-xs" style="font-size: 10px; padding: 2px 6px; border-radius: 4px;" title="Xem các ca đặt trước"><i class="fa fa-calendar"></i> Ca sau (${tableReservations.length})</button>
-                                            ` : `
-                                                <span class="badge" style="font-size: 10px; background: #6c757d; color: #fff;">Ca sau (${tableReservations.length})</span>
-                                            `
-                                        ) : ''}
-                                    </div>
-
-                                    <div>
-                                        <i class="fa fa-coffee table-icon" style="color: #28a745; margin-bottom: 4px;"></i>
-                                        <h3 style="margin: 2px 0;">${escapeHtml(displayName)}</h3>
-                                        <p style="margin: 0; color: #28a745; font-weight: bold;">Bàn trống</p>
-                                    </div>
-
-                                    <div style="margin-top: 4px;">
-                                        <small class="text-muted">Nhấn để mở bàn</small>
-                                    </div>
-                                </div>
-                            </div>`;
+                    } else if (holdingRes) {
+                        // BÀN ĐANG ĐẶT TRƯỚC (TRONG VÒNG 1 TIẾNG GẦN GIỜ HẸN HOẶC ĐANG TRONG GIỜ HẸN) -> HIỂN THỊ ẢNH 1
+                        if (t.status !== 'RESERVED') {
+                            fetchWithAuth(`/tables/${t.id}/status`, {
+                                method: 'PATCH',
+                                body: JSON.stringify({ status: 'RESERVED' })
+                            }).catch(e => console.warn(e));
                         }
+
+                        html += `
+                        <div class="col-md-3 col-sm-4 col-xs-6" style="margin-bottom: 20px;">
+                            <div class="table-card table-reserved" style="border: 2px solid #17a2b8; background-color:#e0f7fa; position: relative; min-height: 200px; padding: 12px; display:flex; flex-direction:column; justify-content:space-between;" onclick="handleReservedTableAction(event, ${t.id}, '${escapeHtml(displayName)}', null, ${holdingRes.id})">
+                                <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
+                                    <span class="badge" style="background:#17a2b8; color:#fff; font-size:10px; font-weight:bold; padding:4px 6px;">ĐÃ ĐẶT TRƯỚC</span>
+                                    <div style="display:flex; gap:4px; align-items:center;">
+                                        ${tableReservations.length > 1 ? `
+                                            <button onclick="event.stopPropagation(); viewFutureReservations(event, ${t.id}, '${escapeHtml(displayName)}')" class="btn btn-default btn-xs" style="font-size: 10px; padding: 2px 6px; border-radius: 4px;" title="Xem các ca đặt trước (${tableReservations.length})"><i class="fa fa-calendar"></i> (${tableReservations.length})</button>
+                                        ` : ''}
+                                        <button onclick="event.stopPropagation(); cancelReservation(event, ${t.id}, null, ${holdingRes ? holdingRes.id : 'null'})" style="background: #dc3545; color: white; border: none; border-radius: 4px; padding: 2px 8px; font-size: 11px; font-weight:bold; cursor: pointer; z-index: 5;">Hủy</button>
+                                    </div>
+                                </div>
+                                <div>
+                                    <i class="fa fa-calendar table-icon" style="color: #17a2b8; margin: 4px 0; font-size: 32px;"></i>
+                                    <h3 style="margin: 2px 0;">${escapeHtml(displayName)}</h3>
+                                    <p style="margin: 0; color: #0e7490; font-weight: bold;">Đang giữ bàn</p>
+                                    <div style="font-size: 11px; color: #0369a1; background: #e0f2fe; border: 1px dashed #7dd3fc; border-radius: 4px; padding: 4px 6px; margin: 4px 0; text-align: left; cursor: pointer;" onclick="event.stopPropagation(); viewEditReservedCustomerPos(${holdingRes.id}, '${escapeHtml(displayName)}', ${t.id})" title="Nhấn để xem và sửa thông tin ca đặt">
+                                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                                            <span><i class="fa fa-user"></i> <b>${escapeHtml(holdingRes.customerName || 'Khách đặt')}</b></span>
+                                            ${holdingRes.visitCount ? `<span class="badge" style="background:#0284c7; font-size:9px;">Ghé ${holdingRes.visitCount} lần</span>` : ''}
+                                        </div>
+                                        <div><i class="fa fa-clock-o"></i> <b>Giờ:</b> ${(holdingRes.startTime || '').slice(0,5)} - ${(holdingRes.endTime || '').slice(0,5)} <small style="color:#d97706; font-weight:bold;">(còn ~${Math.max(0, holdingRes.diff)}p)</small></div>
+                                        ${holdingRes.customerPhone && holdingRes.customerPhone !== '0000000000' ? `<div style="color:#64748b;"><i class="fa fa-phone"></i> ${escapeHtml(holdingRes.customerPhone)}</div>` : ''}
+                                        <div style="font-size: 10px; color: #0284c7; margin-top: 1px;"><i class="fa fa-pencil"></i> Nhấn để xem & sửa ca đặt</div>
+                                    </div>
+                                </div>
+                                <div style="width:100%; margin-top:6px; display:flex; flex-direction:column; gap:4px;">
+                                    <button class="btn btn-default btn-xs w-100" style="width:100%; font-size:11px; font-weight:bold; background:#fff; border:1px solid #0e7490; padding:4px 6px; border-radius:4px; color:#0e7490;" onclick="event.stopPropagation(); viewEditReservedCustomerPos(${holdingRes.id}, '${escapeHtml(displayName)}', ${t.id})">
+                                        <i class="fa fa-pencil"></i> Xem & sửa thông tin khách đặt
+                                    </button>
+                                    <button class="btn btn-info btn-xs w-100" style="width:100%; font-size:11px; font-weight:bold; background:#0e7490; border:none; padding:4px 6px; border-radius:4px; color:#fff;" onclick="event.stopPropagation(); openTableForReservedGuest(${t.id}, '${escapeHtml(displayName)}', ${holdingRes.id}, '${escapeHtml(holdingRes.customerName || '')}', '${escapeHtml(holdingRes.customerPhone || '')}', '${(holdingRes.startTime || '').slice(0,5)}', '${escapeHtml(holdingRes.note || '')}')">
+                                        <i class="fa fa-check-circle"></i> Khách đến - Mở bàn
+                                    </button>
+                                    <button class="btn btn-warning btn-xs w-100" style="width:100%; font-size:10px; font-weight:bold; background:#f59e0b; border:none; padding:3px 6px; border-radius:4px; color:#fff;" onclick="event.stopPropagation(); openForWalkInGuest(${t.id}, '${escapeHtml(displayName)}')">
+                                        <i class="fa fa-cutlery"></i> Cho khách mới vào ăn
+                                    </button>
+                                </div>
+                            </div>
+                        </div>`;
+                    } else {
+                        // BÀN TRỐNG THÔNG THƯỜNG (CHƯA ĐẾN 1 TIẾNG TRƯỚC GIỜ HẸN HOẶC KHÔNG CÓ CA ĐẶT) -> HIỂN THỊ ẢNH 2
+                        // Nếu bàn trong DB đang bị lưu là RESERVED thì khôi phục về AVAILABLE vì chưa đến 1 tiếng trước giờ hẹn
+                        if (t.status === 'RESERVED') {
+                            fetchWithAuth(`/tables/${t.id}/status`, {
+                                method: 'PATCH',
+                                body: JSON.stringify({ status: 'AVAILABLE' })
+                            }).catch(e => console.warn(e));
+                            t.status = 'AVAILABLE';
+                        }
+
+                        html += `
+                        <div class="col-md-3 col-sm-4 col-xs-6" style="margin-bottom: 20px;">
+                            <div class="table-card table-empty" style="position: relative; min-height: 200px; padding: 12px; display: flex; flex-direction: column; justify-content: space-between;" onclick="handleEmptyTableClick(event, ${t.id}, '${escapeHtml(displayName)}', false)">
+                                <div style="text-align: right; width: 100%;">
+                                    ${tableReservations.length > 0 ? (
+                                        isCashierOrAdmin ? `
+                                            <button onclick="event.stopPropagation(); viewFutureReservations(event, ${t.id}, '${escapeHtml(displayName)}')" class="btn btn-default btn-xs" style="font-size: 11px; padding: 2px 7px; border-radius: 4px; border: 1px solid #ccc; background: #fff; color: #333;" title="Xem các ca đặt trước"><i class="fa fa-calendar"></i> Ca sau (${tableReservations.length})</button>
+                                        ` : `
+                                            <span class="badge" style="font-size: 10px; background: #6c757d; color: #fff;"><i class="fa fa-calendar"></i> Ca sau (${tableReservations.length})</span>
+                                        `
+                                    ) : ''}
+                                </div>
+
+                                <div>
+                                    <i class="fa fa-coffee table-icon" style="color: #28a745; margin-bottom: 4px; font-size: 32px;"></i>
+                                    <h3 style="margin: 2px 0;">${escapeHtml(displayName)}</h3>
+                                    <p style="margin: 0; color: #28a745; font-weight: bold;">Bàn trống</p>
+                                </div>
+
+                                <div style="margin-top: 4px;">
+                                    <small class="text-muted">Nhấn để mở bàn</small>
+                                </div>
+                            </div>
+                        </div>`;
                     }
                 });
                 
@@ -596,6 +633,9 @@
                                 <button class="btn btn-success" style="width: 100%; font-weight: bold; padding: 9px; font-size: 13px;" onclick="Swal.close(); openTableForReservedGuest(${tableId}, '${escapeHtml(tableName)}', ${reservationId}, '${escapeHtml(customerName)}', '${escapeHtml(customerPhone || '')}', '${startTime}', '${escapeHtml(resNote || '')}')">
                                     <i class="fa fa-check-circle"></i> 🎉 Khách Đặt Đã Đến (Mở Bàn Ngay)
                                 </button>
+                                <button class="btn btn-primary" style="width: 100%; font-weight: bold; padding: 9px; font-size: 13px; background: #0284c7; color: #fff; border:none;" onclick="Swal.close(); openEditReservationPosById(${reservationId}, '${escapeHtml(tableName)}')">
+                                    <i class="fa fa-pencil"></i> ✏️ Xem & Sửa Thông Tin Khách Đặt
+                                </button>
                                 <button class="btn btn-warning" style="width: 100%; font-weight: bold; padding: 9px; font-size: 13px; background: #f59e0b; color: #fff; border:none;" onclick="Swal.close(); switchReservationTable(${reservationId}, ${tableId}, '${escapeHtml(tableName)}', '${escapeHtml(customerName)}')">
                                     <i class="fa fa-exchange"></i> 🔄 Chuyển Ca Đặt Này Sang Bàn Khác
                                 </button>
@@ -627,7 +667,14 @@
                     method: 'POST',
                     body: JSON.stringify({ fullName: customerName || 'Khách đặt trước', phone: customerPhone || '0000000000' })
                 });
-                const customerId = cusRes.data ? cusRes.data.id : 1;
+                let customerId = cusRes && cusRes.data ? cusRes.data.id : null;
+                if (!customerId) {
+                    try {
+                        const walkInRes = await fetchWithAuth('/customers/by-phone/0000000000');
+                        if (walkInRes && walkInRes.data) customerId = walkInRes.data.id;
+                    } catch(e) {}
+                }
+                if (!customerId) customerId = 1;
 
                 // 2. Chuyển trạng thái bàn sang OCCUPIED
                 await fetchWithAuth(`/tables/${tableId}/status`, {
@@ -702,7 +749,7 @@
             }
         };
 
-        window.handleReservedTableAction = async function(e, tableId, tableName, orderId) {
+        window.handleReservedTableAction = async function(e, tableId, tableName, orderId, resId) {
             if (e) {
                 if (e.target && e.target.tagName === 'BUTTON' && e.target.innerText.trim() === 'Hủy') return;
                 e.stopPropagation();
@@ -718,10 +765,13 @@
                             <button class="btn btn-success" style="width: 100%; font-weight: bold; padding: 10px; font-size: 13px;" onclick="Swal.close(); confirmReservedGuestArrived(${tableId}, '${escapeHtml(tableName)}', ${orderId})">
                                 <i class="fa fa-check-circle"></i> 🎉 Khách Đặt Đã Đến (Mở Bàn Nhận Chỗ)
                             </button>
+                            <button class="btn btn-primary" style="width: 100%; font-weight: bold; padding: 10px; font-size: 13px; background: #0284c7; color: #fff; border:none;" onclick="Swal.close(); viewEditReservedCustomerPos(${resId || 'null'}, '${escapeHtml(tableName)}', ${tableId})">
+                                <i class="fa fa-pencil"></i> ✏️ Xem & Sửa Thông Tin Khách Đặt
+                            </button>
                             <button class="btn btn-warning" style="width: 100%; font-weight: bold; padding: 10px; font-size: 13px; background: #f59e0b; color: #fff; border:none;" onclick="Swal.close(); openForWalkInGuest(${tableId}, '${escapeHtml(tableName)}')">
                                 <i class="fa fa-cutlery"></i> 🍽️ Cho Khách Mới Vào Ăn (Chưa Tới Giờ Khách Đặt)
                             </button>
-                            <button class="btn btn-danger" style="width: 100%; font-weight: bold; padding: 8px; font-size: 12px; background: #ef4444; color: #fff; border:none;" onclick="Swal.close(); cancelReservation(null, ${tableId}, ${orderId})">
+                            <button class="btn btn-danger" style="width: 100%; font-weight: bold; padding: 8px; font-size: 12px; background: #ef4444; color: #fff; border:none;" onclick="Swal.close(); cancelReservation(null, ${tableId}, ${orderId}, ${resId || 'null'})">
                                 <i class="fa fa-times-circle"></i> ❌ Hủy Đặt Bàn (Đưa Về Bàn Trống)
                             </button>
                         </div>
@@ -897,7 +947,27 @@
             document.getElementById('customerPhone').value = '';
             document.getElementById('customerName').value = '';
             document.getElementById('customerDeposit').value = '';
+            const fb = document.getElementById('customerPhoneFeedback');
+            if (fb) fb.innerHTML = '';
             
+            const noticeElem = document.getElementById('openTableFutureResNotice');
+            if (noticeElem) {
+                const todayStr = new Date().toISOString().split('T')[0];
+                const resList = (allReservationsData || []).filter(r => r.tableId === tableId && r.status !== 'CANCELLED' && r.status !== 'COMPLETED' && r.reservationDate === todayStr);
+                resList.sort((a,b) => (a.startTime || '').localeCompare(b.startTime || ''));
+                if (resList.length > 0) {
+                    const firstRes = resList[0];
+                    noticeElem.innerHTML = `
+                        <div class="alert alert-warning" style="font-size:12px; margin-bottom:12px; background:#fffbeb; border:1px solid #fde68a; color:#92400e; padding:8px 12px; border-radius:6px;">
+                            <i class="fa fa-info-circle"></i> <b>Lưu ý ca sau:</b> Bàn này có ca đặt lúc <b>${(firstRes.startTime || '').slice(0,5)}</b> của khách <b>${escapeHtml(firstRes.customerName || 'Khách đặt')}</b>.<br>
+                            Bạn vẫn có thể mở bàn cho khách mới dùng bữa trước khung giờ này!
+                        </div>
+                    `;
+                } else {
+                    noticeElem.innerHTML = '';
+                }
+            }
+
             const roles = JSON.parse(localStorage.getItem('userRoles') || '[]');
             const isCashier = roles.includes('ROLE_ADMIN') || roles.includes('ADMIN') || roles.includes('ROLE_CASHIER') || roles.includes('CASHIER');
             document.getElementById('reserveTableBtn').style.display = isCashier ? 'inline-block' : 'none';
@@ -914,14 +984,14 @@
             openFutureReservationModal(null, selectedTableId, selectedTableName, { phone, name, deposit });
         }
 
-        window.cancelReservation = async function(e, tableId, orderId) {
-            e.stopPropagation();
+        window.cancelReservation = async function(e, tableId, orderId, resId) {
+            if (e && e.stopPropagation) e.stopPropagation();
             const res = await Swal.fire({
                 title: 'Hủy đặt trước?',
                 text: 'Bạn có chắc chắn muốn HỦY đặt trước bàn này không? Bàn sẽ trở về trạng thái trống.',
                 icon: 'warning',
                 showCancelButton: true,
-                confirmButtonText: 'Đồng ý hủy',
+                confirmButtonText: '<i class="fa fa-trash"></i> Đồng ý hủy',
                 cancelButtonText: 'Quay lại',
                 confirmButtonColor: '#dc3545',
                 cancelButtonColor: '#6c757d'
@@ -929,13 +999,43 @@
             if(!res.isConfirmed) return;
             
             try {
-                if (orderId) {
-                    await fetchWithAuth(`/orders/${orderId}/status?status=CANCELLED`, { method: 'PUT' });
+                if (orderId && orderId !== 'null' && orderId !== 'undefined') {
+                    await fetchWithAuth(`/orders/${orderId}/status?status=CANCELLED`, { method: 'PUT' }).catch(e => console.warn(e));
                 }
+
+                let targetResIds = [];
+                if (resId && resId !== 'null' && resId !== 'undefined') {
+                    targetResIds.push(resId);
+                } else {
+                    const matched = (allReservationsData || []).filter(r => 
+                        r.tableId === tableId && 
+                        r.status !== 'CANCELLED' && 
+                        r.status !== 'COMPLETED'
+                    );
+                    matched.forEach(r => targetResIds.push(r.id));
+                }
+
+                if (targetResIds.length === 0) {
+                    try {
+                        const tableRes = await fetchWithAuth(`/reservations/table/${tableId}`);
+                        const rList = tableRes.data || [];
+                        rList.filter(r => r.status !== 'CANCELLED' && r.status !== 'COMPLETED').forEach(r => {
+                            if (!targetResIds.includes(r.id)) targetResIds.push(r.id);
+                        });
+                    } catch(e) {
+                        console.warn('Cannot fetch reservations for table', e);
+                    }
+                }
+
+                for (const rid of targetResIds) {
+                    await fetchWithAuth(`/reservations/${rid}`, { method: 'DELETE' });
+                }
+
                 await fetchWithAuth(`/tables/${tableId}/status`, {
                     method: 'PATCH',
                     body: JSON.stringify({ status: 'AVAILABLE' })
-                });
+                }).catch(e => console.warn(e));
+
                 Swal.fire({
                     toast: true,
                     position: 'top-end',
@@ -953,7 +1053,7 @@
                     confirmButtonColor: '#d10024'
                 });
             }
-        }
+        };
 
         window.markArrived = async function(tableId, orderId) {
             const res = await Swal.fire({
@@ -1018,7 +1118,14 @@
                     method: 'POST',
                     body: JSON.stringify({ fullName: customerName, phone: customerPhone })
                 });
-                const customerId = cusRes.data ? cusRes.data.id : 1;
+                let customerId = cusRes && cusRes.data ? cusRes.data.id : null;
+                if (!customerId) {
+                    try {
+                        const walkInRes = await fetchWithAuth('/customers/by-phone/0000000000');
+                        if (walkInRes && walkInRes.data) customerId = walkInRes.data.id;
+                    } catch(e) {}
+                }
+                if (!customerId) customerId = 1;
                 
                 // 2. Update Table Status to OCCUPIED
                 await fetchWithAuth(`/tables/${selectedTableId}/status`, {
@@ -1095,7 +1202,12 @@
                     <div style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; background: #f8fafc; text-align: left; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                             <span style="font-weight: bold; color: #0284c7; font-size: 15px;">#${i + 1}. Khách: ${escapeHtml(r.customerName || 'Chưa có tên')}</span>
-                            <span class="badge" style="background: #10b981; color: #fff; font-size: 11px;">${r.status || 'CONFIRMED'}</span>
+                            <div style="display:flex; align-items:center; gap:6px;">
+                                <span class="badge" style="background: #10b981; color: #fff; font-size: 11px;">${r.status || 'CONFIRMED'}</span>
+                                <button class="btn btn-primary btn-xs" style="font-size: 11px; font-weight: bold; padding: 2px 8px; border-radius: 4px; background: #0284c7; color: #fff; border: none;" onclick="Swal.close(); openEditReservationPosById(${r.id}, '${escapeHtml(displayName)}')">
+                                    <i class="fa fa-pencil"></i> Sửa
+                                </button>
+                            </div>
                         </div>
                         <div style="font-size: 13px; color: #334155; margin-bottom: 3px;">
                             <i class="fa fa-calendar" style="color: #0284c7;"></i> <b>Ngày:</b> ${r.reservationDate} &nbsp;|&nbsp; 
@@ -1106,11 +1218,14 @@
                             <i class="fa fa-users"></i> Khách: <b>${r.numberOfGuests || 4} người</b>
                         </div>
                         ${r.note ? `<div style="font-size: 12px; color: #b45309; background: #fef3c7; padding: 4px 8px; border-radius: 4px; margin-top: 5px;">📝 ${escapeHtml(r.note)}</div>` : ''}
-                        <div style="margin-top: 8px; padding-top: 6px; border-top: 1px dashed #ddd; display: flex; justify-content: flex-end; gap: 6px;">
-                            <button class="btn btn-warning btn-xs" style="font-size: 11px; font-weight: bold; padding: 4px 10px; border-radius: 4px; background: #f59e0b; color: #fff; border: none;" onclick="Swal.close(); switchReservationTable(${r.id}, ${tableId}, '${escapeHtml(displayName)}', '${escapeHtml(r.customerName)}')">
+                        <div style="margin-top: 8px; padding-top: 6px; border-top: 1px dashed #ddd; display: flex; justify-content: flex-end; gap: 6px; flex-wrap: wrap;">
+                            <button class="btn btn-primary btn-xs" style="font-size: 12px; font-weight: bold; padding: 5px 12px; border-radius: 4px; background: #0284c7; color: #fff; border: none;" onclick="Swal.close(); openEditReservationPosById(${r.id}, '${escapeHtml(displayName)}')">
+                                <i class="fa fa-pencil"></i> Sửa thông tin
+                            </button>
+                            <button class="btn btn-warning btn-xs" style="font-size: 12px; font-weight: bold; padding: 5px 12px; border-radius: 4px; background: #f59e0b; color: #fff; border: none;" onclick="Swal.close(); switchReservationTable(${r.id}, ${tableId}, '${escapeHtml(displayName)}', '${escapeHtml(r.customerName)}')">
                                 <i class="fa fa-exchange"></i> Chuyển sang bàn khác
                             </button>
-                            <button class="btn btn-danger btn-xs" style="font-size: 11px; font-weight: bold; padding: 4px 10px; border-radius: 4px; background: #ef4444; color: #fff; border: none;" onclick="Swal.close(); cancelSingleReservation(${r.id}, '${escapeHtml(r.customerName)}')">
+                            <button class="btn btn-danger btn-xs" style="font-size: 12px; font-weight: bold; padding: 5px 12px; border-radius: 4px; background: #ef4444; color: #fff; border: none;" onclick="Swal.close(); cancelSingleReservation(${r.id}, '${escapeHtml(r.customerName)}')">
                                 <i class="fa fa-times-circle"></i> Hủy ca đặt
                             </button>
                         </div>
@@ -1209,6 +1324,7 @@
                         <div class="form-group mb-2" style="margin-bottom:8px;">
                             <label style="font-weight:bold; margin-bottom:2px;">Số điện thoại *</label>
                             <input id="swal-res-phone" class="form-control input-sm" placeholder="Nhập số điện thoại" value="${escapeHtml(defaultPhone)}">
+                            <div id="swal-res-phone-feedback" style="margin-top:4px;"></div>
                         </div>
                         <div class="row" style="margin:0 -5px 8px -5px;">
                             <div class="col-xs-6" style="padding:0 5px;">
@@ -1240,6 +1356,17 @@
                         </div>
                     </div>
                 `,
+                didOpen: () => {
+                    const phoneInput = document.getElementById('swal-res-phone');
+                    if (phoneInput) {
+                        phoneInput.addEventListener('input', () => {
+                            window.lookupCustomerByPhonePos(phoneInput.value, 'swal-res-name', 'swal-res-phone-feedback');
+                        });
+                        if (phoneInput.value) {
+                            window.lookupCustomerByPhonePos(phoneInput.value, 'swal-res-name', 'swal-res-phone-feedback');
+                        }
+                    }
+                },
                 focusConfirm: false,
                 showCancelButton: true,
                 confirmButtonText: '<i class="fa fa-check"></i> Xác nhận đặt bàn',
@@ -1303,6 +1430,30 @@
                     })
                 });
 
+                // Chỉ đồng bộ sang RESERVED nếu trong vòng 60 phút tính tới giờ bắt đầu hôm nay
+                const todayStr = new Date().toISOString().split('T')[0];
+                const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+                const [sh, sm] = formValues.start.split(':').map(Number);
+                const startMin = sh * 60 + sm;
+                const diffMin = startMin - nowMin;
+                const isWithin60 = (formValues.date === todayStr) && (diffMin <= 60 && diffMin >= -120);
+
+                // Kiểm tra xem bàn có đang phục vụ khách ăn không
+                let isCurrentlyOccupied = (allActiveOrdersData || []).some(o => o.tableId === tableId);
+                if (!isCurrentlyOccupied && Array.isArray(allTablesData)) {
+                    const currentTable = allTablesData.find(t => t.id === tableId);
+                    if (currentTable && (currentTable.status === 'OCCUPIED' || currentTable.status === 'BUSY')) {
+                        isCurrentlyOccupied = true;
+                    }
+                }
+                if (!isCurrentlyOccupied) {
+                    const targetStatus = isWithin60 ? 'RESERVED' : 'AVAILABLE';
+                    await fetchWithAuth(`/tables/${tableId}/status`, {
+                        method: 'PATCH',
+                        body: JSON.stringify({ status: targetStatus })
+                    }).catch(e => console.warn(e));
+                }
+
                 Swal.fire({
                     icon: 'success',
                     title: 'Đặt bàn thành công!',
@@ -1321,10 +1472,372 @@
             }
         };
 
+        let posLookupTimeout = null;
+        window.lookupCustomerByPhonePos = function(phone, nameInputId, feedbackElemId) {
+            if (posLookupTimeout) clearTimeout(posLookupTimeout);
+            const feedbackElem = document.getElementById(feedbackElemId);
+            if (!phone || phone.trim().length < 8) {
+                if (feedbackElem) feedbackElem.innerHTML = '';
+                return;
+            }
+            const cleanPhone = phone.trim();
+            if (cleanPhone === '0000000000') {
+                if (feedbackElem) feedbackElem.innerHTML = '';
+                return;
+            }
+
+            posLookupTimeout = setTimeout(async () => {
+                try {
+                    if (feedbackElem) feedbackElem.innerHTML = '<span style="color:#6c757d; font-size:12px;"><i class="fa fa-spinner fa-spin"></i> Đang tra cứu thông tin khách...</span>';
+                    const res = await fetchWithAuth(`/customers/by-phone/${cleanPhone}`);
+                    const customer = res.data;
+                    if (customer && customer.fullName) {
+                        const nameInput = document.getElementById(nameInputId);
+                        if (nameInput && (!nameInput.value || nameInput.value === 'Khách vãng lai' || nameInput.value.trim() === '')) {
+                            nameInput.value = customer.fullName;
+                        }
+                        const visits = customer.visitCount || 1;
+                        if (feedbackElem) {
+                            feedbackElem.innerHTML = `
+                                <div style="background: #e6fffa; border: 1px solid #38b2ac; color: #234e52; padding: 4px 8px; border-radius: 4px; font-size: 12px; margin-top: 4px;">
+                                    <i class="fa fa-star" style="color: #d69e2e;"></i> <b>Khách quen!</b> Đã ghé quán <b>${visits}</b> lần • Tên: <b>${escapeHtml(customer.fullName)}</b>
+                                </div>`;
+                        }
+                    } else {
+                        if (feedbackElem) {
+                            feedbackElem.innerHTML = `
+                                <div style="background: #ebf8ff; border: 1px solid #63b3ed; color: #2b6cb0; padding: 4px 8px; border-radius: 4px; font-size: 12px; margin-top: 4px;">
+                                    <i class="fa fa-info-circle"></i> <b>Khách mới</b> ghé lần đầu
+                                </div>`;
+                        }
+                    }
+                } catch (err) {
+                    if (feedbackElem) feedbackElem.innerHTML = '';
+                }
+            }, 300);
+        };
+
+        window.viewEditDiningCustomerPos = async function(orderId, tableName) {
+            if (!orderId) {
+                Swal.fire({ icon: 'warning', title: 'Thông báo', text: 'Bàn này chưa có đơn hàng nào!' });
+                return;
+            }
+            try {
+                const ordRes = await fetchWithAuth(`/orders/${orderId}`);
+                const order = ordRes.data;
+                if (!order) throw new Error("Không tìm thấy thông tin đơn hàng!");
+
+                let customer = null;
+                if (order.customerId) {
+                    try {
+                        const cusRes = await fetchWithAuth(`/customers/${order.customerId}`);
+                        customer = cusRes.data;
+                    } catch(e) {}
+                }
+
+                const cusName = (customer ? customer.fullName : order.customerName) || 'Khách vãng lai';
+                const cusPhone = (customer ? customer.phone : order.customerPhone) || '';
+                const visits = customer && customer.visitCount ? customer.visitCount : (order.visitCount || 1);
+                const visitBadge = (cusPhone && cusPhone !== '0000000000' && visits > 1)
+                    ? `<span class="badge" style="background: #10b981; color: #fff; padding: 5px 8px; font-size:12px;"><i class="fa fa-star"></i> Khách quen! Đã ghé ${visits} lần</span>`
+                    : `<span class="badge" style="background: #0ea5e9; color: #fff; padding: 5px 8px; font-size:12px;"><i class="fa fa-user"></i> Khách mới ghé lần đầu</span>`;
+
+                const { value: formValues } = await Swal.fire({
+                    title: `<div style="font-size:19px; font-weight:bold; color:#0284c7;"><i class="fa fa-user"></i> Thông Tin Khách Đang Ăn - ${escapeHtml(tableName)}</div>`,
+                    html: `
+                        <div style="text-align: left; font-size: 14px;">
+                            <div style="background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 10px; margin-bottom: 12px; display:flex; justify-content:space-between; align-items:center;">
+                                <div>
+                                    <div style="font-weight:bold; color:#0369a1;">Mã đơn: #${order.orderCode || order.id}</div>
+                                    <div style="font-size:12px; color:#64748b;">Bàn: ${escapeHtml(tableName)}</div>
+                                </div>
+                                <div>${visitBadge}</div>
+                            </div>
+
+                            <div class="form-group" style="margin-bottom:10px;">
+                                <label style="font-weight:bold; margin-bottom:2px;">Số điện thoại khách hàng</label>
+                                <input id="swal-edit-cus-phone" class="form-control input-sm" value="${escapeHtml(cusPhone === '0000000000' ? '' : cusPhone)}" placeholder="Ví dụ: 0987654321">
+                                <div id="swal-edit-cus-phone-feedback" style="margin-top:4px;"></div>
+                            </div>
+
+                            <div class="form-group" style="margin-bottom:10px;">
+                                <label style="font-weight:bold; margin-bottom:2px;">Tên khách hàng <span class="text-danger">*</span></label>
+                                <input id="swal-edit-cus-name" class="form-control input-sm" value="${escapeHtml(cusName)}" placeholder="Nhập tên khách hàng">
+                            </div>
+
+                            <div class="form-group" style="margin-bottom:10px;">
+                                <label style="font-weight:bold; margin-bottom:2px;">Ghi chú đơn hàng / Yêu cầu riêng</label>
+                                <input id="swal-edit-order-note" class="form-control input-sm" value="${escapeHtml(order.note || '')}" placeholder="Ghi chú món, sở thích, cọc...">
+                            </div>
+                        </div>
+                    `,
+                    didOpen: () => {
+                        const phoneInput = document.getElementById('swal-edit-cus-phone');
+                        if (phoneInput) {
+                            phoneInput.addEventListener('input', () => {
+                                window.lookupCustomerByPhonePos(phoneInput.value, 'swal-edit-cus-name', 'swal-edit-cus-phone-feedback');
+                            });
+                        }
+                    },
+                    showCancelButton: true,
+                    confirmButtonText: '<i class="fa fa-save"></i> Lưu thông tin',
+                    cancelButtonText: 'Đóng',
+                    confirmButtonColor: '#0284c7',
+                    preConfirm: () => {
+                        const name = (document.getElementById('swal-edit-cus-name').value || '').trim();
+                        const phone = (document.getElementById('swal-edit-cus-phone').value || '').trim() || '0000000000';
+                        const note = (document.getElementById('swal-edit-order-note').value || '').trim();
+                        if (!name) {
+                            Swal.showValidationMessage('Tên khách hàng không được để trống!');
+                            return false;
+                        }
+                        return { name, phone, note };
+                    }
+                });
+
+                if (!formValues) return;
+
+                // Check-in thông tin khách hàng mới hoặc cập nhật
+                const cusRes = await fetchWithAuth('/customers/check-in', {
+                    method: 'POST',
+                    body: JSON.stringify({ fullName: formValues.name, phone: formValues.phone })
+                });
+                const newCustomer = cusRes.data;
+                if (newCustomer && newCustomer.id) {
+                    await fetchWithAuth(`/orders/${orderId}/customer/${newCustomer.id}`, {
+                        method: 'PUT'
+                    }).catch(e => console.warn(e));
+                }
+
+                await fetchWithAuth(`/orders/${orderId}/note`, {
+                    method: 'PUT',
+                    body: JSON.stringify({ note: formValues.note })
+                });
+
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Cập nhật thành công! 🎉',
+                    text: `Đã lưu thông tin khách ăn cho ${tableName}`,
+                    timer: 1500,
+                    showConfirmButton: false
+                });
+
+                loadTables();
+            } catch(err) {
+                Swal.fire({ icon: 'error', title: 'Lỗi cập nhật', text: err.message, confirmButtonColor: '#d33' });
+            }
+        };
+
+        window.viewEditReservedCustomerPos = async function(reservationId, tableName, tableId) {
+            let resId = (reservationId && reservationId !== 'null') ? parseInt(reservationId) : null;
+            let targetTableId = tableId ? parseInt(tableId) : null;
+
+            if (!resId && targetTableId) {
+                const found = (allReservationsData || []).find(r => r.tableId === targetTableId && r.status !== 'CANCELLED' && r.status !== 'COMPLETED');
+                if (found) resId = found.id;
+            }
+
+            if (!resId) {
+                try {
+                    const resRes = await fetchWithAuth('/reservations/all');
+                    allReservationsData = resRes.data || [];
+                    const checkId = targetTableId || (reservationId ? parseInt(reservationId) : null);
+                    if (checkId) {
+                        const found = allReservationsData.find(r => (r.tableId === checkId || r.id === checkId) && r.status !== 'CANCELLED' && r.status !== 'COMPLETED');
+                        if (found) resId = found.id;
+                    }
+                } catch(e) {}
+            }
+
+            if (!resId) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Chưa có thông tin ca đặt',
+                    text: `Bàn ${tableName} hiện không tìm thấy ca đặt trước nào!`,
+                    confirmButtonColor: '#ff9800'
+                });
+                return;
+            }
+
+            return window.openEditReservationPosById(resId, tableName);
+        };
+
+        window.openEditReservationPosById = async function(reservationId, tableName) {
+            if (!reservationId || reservationId === 'null') {
+                Swal.fire({ icon: 'warning', title: 'Thông báo', text: 'Không tìm thấy ca đặt bàn này!' });
+                return;
+            }
+            try {
+                let res = null;
+                const parsedId = parseInt(reservationId);
+                try {
+                    const resvRes = await fetchWithAuth(`/reservations/${parsedId}`);
+                    res = resvRes.data;
+                } catch(fetchErr) {
+                    try {
+                        const allResRes = await fetchWithAuth('/reservations/all');
+                        allReservationsData = allResRes.data || [];
+                        const found = allReservationsData.find(r => (r.id === parsedId || r.tableId === parsedId) && r.status !== 'CANCELLED' && r.status !== 'COMPLETED');
+                        if (found) {
+                            res = found;
+                        } else {
+                            throw fetchErr;
+                        }
+                    } catch(e2) {
+                        throw fetchErr;
+                    }
+                }
+
+                if (!res) throw new Error("Không tìm thấy thông tin ca đặt!");
+
+                let customer = null;
+                if (res.customerId) {
+                    try {
+                        const cusRes = await fetchWithAuth(`/customers/${res.customerId}`);
+                        customer = cusRes.data;
+                    } catch(e) {}
+                }
+
+                const cusName = (customer ? customer.fullName : res.customerName) || 'Khách đặt';
+                const cusPhone = (customer ? customer.phone : res.customerPhone) || '';
+                const visits = customer && customer.visitCount ? customer.visitCount : (res.visitCount || 1);
+                const visitBadge = (cusPhone && cusPhone !== '0000000000' && visits > 1)
+                    ? `<span class="badge" style="background:#10b981; color:#fff; padding:5px 8px; font-size:12px;"><i class="fa fa-star"></i> Khách quen! Đã ghé ${visits} lần</span>`
+                    : `<span class="badge" style="background:#0ea5e9; color:#fff; padding:5px 8px; font-size:12px;"><i class="fa fa-user"></i> Khách mới đặt lần đầu</span>`;
+
+                const { value: formValues } = await Swal.fire({
+                    title: `<div style="font-size:19px; font-weight:bold; color:#b45309;"><i class="fa fa-calendar-check-o"></i> Thông Tin Khách Đặt - ${escapeHtml(tableName)}</div>`,
+                    html: `
+                        <div style="text-align: left; font-size: 14px;">
+                            <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 10px; margin-bottom: 12px; display:flex; justify-content:space-between; align-items:center;">
+                                <div>
+                                    <div style="font-weight:bold; color:#92400e;">Mã đặt: #${res.reservationCode}</div>
+                                    <div style="font-size:12px; color:#6b7280;">Bàn: ${escapeHtml(tableName)}</div>
+                                </div>
+                                <div>${visitBadge}</div>
+                            </div>
+
+                            <div class="form-group" style="margin-bottom:8px;">
+                                <label style="font-weight:bold; margin-bottom:2px;">Tên khách hàng <span class="text-danger">*</span></label>
+                                <input id="swal-edit-res-name" class="form-control input-sm" value="${escapeHtml(cusName)}" placeholder="Nhập tên khách hàng">
+                            </div>
+                            <div class="form-group" style="margin-bottom:8px;">
+                                <label style="font-weight:bold; margin-bottom:2px;">Số điện thoại <span class="text-danger">*</span></label>
+                                <input id="swal-edit-res-phone" class="form-control input-sm" value="${escapeHtml(cusPhone === '0000000000' ? '' : cusPhone)}" placeholder="Nhập số điện thoại">
+                                <div id="swal-edit-res-phone-feedback" style="margin-top:4px;"></div>
+                            </div>
+                            <div class="row" style="margin:0 -5px 8px -5px;">
+                                <div class="col-xs-6" style="padding:0 5px;">
+                                    <label style="font-weight:bold; margin-bottom:2px;">Ngày đặt <span class="text-danger">*</span></label>
+                                    <input id="swal-edit-res-date" type="date" class="form-control input-sm" value="${res.reservationDate}">
+                                </div>
+                                <div class="col-xs-6" style="padding:0 5px;">
+                                    <label style="font-weight:bold; margin-bottom:2px;">Số khách</label>
+                                    <input id="swal-edit-res-guests" type="number" min="1" class="form-control input-sm" value="${res.numberOfGuests || 4}">
+                                </div>
+                            </div>
+                            <div class="row" style="margin:0 -5px 8px -5px;">
+                                <div class="col-xs-6" style="padding:0 5px;">
+                                    <label style="font-weight:bold; margin-bottom:2px;">Giờ bắt đầu <span class="text-danger">*</span></label>
+                                    <input id="swal-edit-res-start" type="time" class="form-control input-sm" value="${(res.startTime || '').slice(0,5)}">
+                                </div>
+                                <div class="col-xs-6" style="padding:0 5px;">
+                                    <label style="font-weight:bold; margin-bottom:2px;">Giờ kết thúc <span class="text-danger">*</span></label>
+                                    <input id="swal-edit-res-end" type="time" class="form-control input-sm" value="${(res.endTime || '').slice(0,5)}">
+                                </div>
+                            </div>
+                            <div class="form-group" style="margin-bottom:8px;">
+                                <label style="font-weight:bold; margin-bottom:2px;">Ghi chú / Tiền cọc</label>
+                                <input id="swal-edit-res-note" class="form-control input-sm" value="${escapeHtml(res.note || '')}" placeholder="Ghi chú yêu cầu riêng của khách...">
+                            </div>
+                        </div>
+                    `,
+                    didOpen: () => {
+                        const phoneInput = document.getElementById('swal-edit-res-phone');
+                        if (phoneInput) {
+                            phoneInput.addEventListener('input', () => {
+                                window.lookupCustomerByPhonePos(phoneInput.value, 'swal-edit-res-name', 'swal-edit-res-phone-feedback');
+                            });
+                        }
+                    },
+                    showCancelButton: true,
+                    confirmButtonText: '<i class="fa fa-save"></i> Lưu cập nhật',
+                    cancelButtonText: 'Đóng',
+                    confirmButtonColor: '#b45309',
+                    preConfirm: () => {
+                        const name = (document.getElementById('swal-edit-res-name').value || '').trim();
+                        const phone = (document.getElementById('swal-edit-res-phone').value || '').trim();
+                        const date = document.getElementById('swal-edit-res-date').value;
+                        const start = document.getElementById('swal-edit-res-start').value;
+                        const end = document.getElementById('swal-edit-res-end').value;
+                        const guests = parseInt(document.getElementById('swal-edit-res-guests').value) || 4;
+                        const note = (document.getElementById('swal-edit-res-note').value || '').trim();
+
+                        if (!name || !phone) {
+                            Swal.showValidationMessage('Vui lòng nhập tên và số điện thoại khách!');
+                            return false;
+                        }
+                        if (!date || !start || !end) {
+                            Swal.showValidationMessage('Vui lòng chọn ngày và giờ đặt!');
+                            return false;
+                        }
+                        if (start >= end) {
+                            Swal.showValidationMessage('Giờ kết thúc phải sau giờ bắt đầu!');
+                            return false;
+                        }
+                        return { name, phone, date, start: start.length === 5 ? start + ':00' : start, end: end.length === 5 ? end + ':00' : end, guests, note };
+                    }
+                });
+
+                if (!formValues) return;
+
+                if (res.customerId) {
+                    await fetchWithAuth(`/customers/${res.customerId}`, {
+                        method: 'PUT',
+                        body: JSON.stringify({ fullName: formValues.name, phone: formValues.phone })
+                    });
+                }
+
+                await fetchWithAuth(`/reservations/${res.id}`, {
+                    method: 'PUT',
+                    body: JSON.stringify({
+                        reservationCode: res.reservationCode,
+                        customerId: res.customerId,
+                        tableId: res.tableId,
+                        reservationDate: formValues.date,
+                        startTime: formValues.start,
+                        endTime: formValues.end,
+                        numberOfGuests: formValues.guests,
+                        note: formValues.note
+                    })
+                });
+
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Cập nhật thành công! 🎉',
+                    text: `Đã lưu thông tin ca đặt của khách ${formValues.name}`,
+                    timer: 1500,
+                    showConfirmButton: false
+                });
+
+                loadTables();
+
+            } catch (err) {
+                Swal.fire({ icon: 'error', title: 'Lỗi cập nhật', text: err.message, confirmButtonColor: '#d33' });
+            }
+        };
+
         let previousOrderStatuses = {};
         document.addEventListener('DOMContentLoaded', () => {
             setupAuthUI();
             loadTables();
+
+            const posPhoneInput = document.getElementById('customerPhone');
+            if (posPhoneInput) {
+                posPhoneInput.addEventListener('input', () => {
+                    window.lookupCustomerByPhonePos(posPhoneInput.value, 'customerName', 'customerPhoneFeedback');
+                });
+            }
 
             // Tự động đồng bộ trạng thái Bếp thời gian thực mỗi 5 giây
             setInterval(async () => {

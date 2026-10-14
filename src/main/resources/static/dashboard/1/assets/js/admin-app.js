@@ -737,15 +737,54 @@ async function deleteProduct(id) {
 // 8. MODULE 5: TABLE MANAGEMENT (FIXED TABLE NAME & CAPACITY FIELD CONTRACT)
 // -------------------------------------------------------------
 let allTablesData = [];
+let allReservationsData = [];
+
+async function updateTableStatusSilently(id, newStatus) {
+    try {
+        await fetchWithAuth(`/api/v1/tables/${id}/status`, {
+            method: 'PATCH',
+            body: JSON.stringify({ status: newStatus })
+        });
+    } catch (e) {
+        console.warn('Silent table status update failed:', e);
+    }
+}
 
 async function loadTables() {
     try {
-        const [res, orderRes] = await Promise.all([
+        const [res, orderRes, resvRes] = await Promise.all([
             fetchWithAuth('/api/v1/tables'),
-            fetchWithAuth('/api/v1/orders/all')
+            fetchWithAuth('/api/v1/orders/all'),
+            fetchWithAuth('/api/v1/reservations/all')
         ]);
         allTablesData = res.data || [];
         allOrdersData = orderRes.data || [];
+        allReservationsData = resvRes.data || [];
+
+        // Tự động đồng bộ lên DB:
+        const todayStr = new Date().toISOString().split('T')[0];
+        allTablesData.forEach(t => {
+            const hasActiveOrder = (allOrdersData || []).some(o => o.tableId === t.id && o.status !== 'COMPLETED' && o.status !== 'CANCELLED');
+            const hasTodayRes = allReservationsData.some(r => 
+                r.tableId === t.id && 
+                r.status !== 'CANCELLED' && 
+                r.status !== 'COMPLETED' &&
+                r.reservationDate === todayStr
+            );
+            
+            if (hasActiveOrder) {
+                // Nếu bàn đang có khách ngồi dùng bữa, trạng thái DB bắt buộc phải là OCCUPIED
+                if (t.status !== 'OCCUPIED') {
+                    updateTableStatusSilently(t.id, 'OCCUPIED');
+                    t.status = 'OCCUPIED';
+                }
+            } else if (hasTodayRes && t.status === 'AVAILABLE') {
+                // Bàn trống và có lịch đặt hôm nay -> Chuyển sang RESERVED
+                updateTableStatusSilently(t.id, 'RESERVED');
+                t.status = 'RESERVED';
+            }
+        });
+
         renderTablesGrid(allTablesData);
         renderTablesListTable(allTablesData);
     } catch (err) {
@@ -762,50 +801,210 @@ function renderTablesGrid(tables) {
         return;
     }
 
-    container.innerHTML = tables.map(t => {
-        let statusBadge = 'bg-success';
-        let statusText = 'Bàn trống';
-        let cardBorder = 'border-success';
+    const todayStr = new Date().toISOString().split('T')[0];
+    const currentMin = new Date().getHours() * 60 + new Date().getMinutes();
 
-        if (t.status === 'OCCUPIED' || t.status === 'BUSY') {
-            statusBadge = 'bg-danger';
-            statusText = 'Có khách';
-            cardBorder = 'border-danger';
-        } else if (t.status === 'RESERVED') {
-            statusBadge = 'bg-warning text-dark';
-            statusText = 'Đã đặt';
-            cardBorder = 'border-warning';
-        }
+    let upcomingBannerHtml = '';
+    const upcomingList = [];
+    tables.forEach(t => {
+        const resList = (allReservationsData || []).filter(r => 
+            r.tableId === t.id && 
+            r.status !== 'CANCELLED' && 
+            r.status !== 'COMPLETED' &&
+            r.reservationDate === todayStr
+        );
+        resList.forEach(r => {
+            if (r.startTime) {
+                const [h, m] = r.startTime.split(':').map(Number);
+                const diff = (h * 60 + m) - currentMin;
+                if (diff >= -30 && diff <= 60) {
+                    const rawName = String(t.tableName || t.name || t.id).trim();
+                    const name = rawName.toLowerCase().startsWith('bàn') ? rawName : ('Bàn ' + rawName);
+                    upcomingList.push({
+                        tableName: name,
+                        customerName: r.customerName || 'Khách đặt',
+                        time: r.startTime.slice(0, 5),
+                        diff: diff
+                    });
+                }
+            }
+        });
+    });
 
+    if (upcomingList.length > 0) {
+        upcomingBannerHtml = `
+            <div class="col-12 mb-3">
+                <div class="alert alert-warning shadow-sm border-warning" style="background: #fff8e1; border-left: 5px solid #ff9800 !important; color: #856404; padding: 12px 18px; border-radius: 8px;">
+                    <div class="d-flex align-items-center justify-content-between flex-wrap">
+                        <div>
+                            <strong style="color: #d97706; font-size: 15px;"><i class="mdi mdi-bell-ring"></i> CẢNH BÁO BÀN ĐÃ ĐẶT TRƯỚC SẮP ĐẾN GIỜ:</strong>
+                            <span class="ms-1">Có <b>${upcomingList.length} bàn</b> đã đặt trước:</span>
+                            ${upcomingList.map(u => `<span class="badge bg-warning text-dark me-1 p-2" style="font-size:12px;">${escapeHtml(u.tableName)} lúc ${u.time} (${escapeHtml(u.customerName)})</span>`).join('')}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    const cardsHtml = tables.map(t => {
         const rawName = String(t.tableName || t.name || t.id).trim();
         const displayName = rawName.toLowerCase().startsWith('bàn') ? rawName : ('Bàn ' + rawName);
         const activeOrder = (allOrdersData || []).find(o => o.tableId === t.id && o.status !== 'COMPLETED' && o.status !== 'CANCELLED');
         const hasActiveOrder = !!activeOrder;
 
+        // Tìm ca đặt hôm nay của bàn này
+        const tableResList = (allReservationsData || []).filter(r => 
+            r.tableId === t.id && 
+            r.status !== 'CANCELLED' && 
+            r.status !== 'COMPLETED' &&
+            r.reservationDate === todayStr
+        );
+        tableResList.sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
+        const activeRes = tableResList[0];
+
+        // Quy tắc giữ bàn 60 phút: Chỉ giữ bàn khi cách giờ hẹn <= 60 phút hoặc đang trong giờ hẹn
+        let holdingRes = null;
+        for (const r of tableResList) {
+            if (r.startTime) {
+                const [h, m] = r.startTime.split(':').map(Number);
+                const resMin = h * 60 + m;
+                const diff = resMin - currentMin;
+                let endMin = resMin + 120;
+                if (r.endTime) {
+                    const [eh, em] = r.endTime.split(':').map(Number);
+                    endMin = eh * 60 + em;
+                }
+                if (diff <= 60 && currentMin <= endMin) {
+                    holdingRes = { ...r, diff: diff };
+                    break;
+                }
+            }
+        }
+
+        const isHoldingSoon = !hasActiveOrder && !!holdingRes;
+        const isReserved = isHoldingSoon;
+        const hasReservation = (allReservationsData || []).some(r => r.tableId === t.id && r.status !== 'CANCELLED' && r.status !== 'COMPLETED');
+        const isTableReserved = isReserved || (t.status === 'RESERVED') || hasReservation;
+
+        // Tự động đồng bộ trạng thái DB bàn nếu bị lệch quy tắc 60 phút
+        if (t.status === 'RESERVED' && !hasActiveOrder && !isHoldingSoon) {
+            fetchWithAuth(`/api/v1/tables/${t.id}/status`, {
+                method: 'PATCH',
+                body: JSON.stringify({ status: 'AVAILABLE' })
+            }).catch(e => console.warn(e));
+            t.status = 'AVAILABLE';
+        } else if (t.status !== 'RESERVED' && !hasActiveOrder && isHoldingSoon) {
+            fetchWithAuth(`/api/v1/tables/${t.id}/status`, {
+                method: 'PATCH',
+                body: JSON.stringify({ status: 'RESERVED' })
+            }).catch(e => console.warn(e));
+            t.status = 'RESERVED';
+        }
+
+        let statusBadge = 'bg-success';
+        let statusText = 'Bàn trống';
+        let cardBorder = 'border-success';
+
+        if (t.status === 'OCCUPIED' || t.status === 'BUSY' || hasActiveOrder) {
+            statusBadge = 'bg-danger';
+            statusText = 'Có khách';
+            cardBorder = 'border-danger';
+        } else if (isReserved) {
+            statusBadge = 'bg-warning text-dark';
+            statusText = 'Đã đặt trước';
+            cardBorder = 'border-warning';
+        }
+
+        let diningDetailHtml = '';
+        if (hasActiveOrder) {
+            const cusName = activeOrder.customerName || 'Khách ăn';
+            const cusPhone = (activeOrder.customerPhone && activeOrder.customerPhone !== '0000000000') ? `(${escapeHtml(activeOrder.customerPhone)})` : '';
+            const visits = activeOrder.visitCount ? `<span class="badge bg-primary text-white" style="font-size:10px; margin-left:3px;">Ghé ${activeOrder.visitCount} lần</span>` : '';
+            diningDetailHtml = `
+                <div style="font-size: 12px; color: #1e40af; background: #eff6ff; border: 1px dashed #93c5fd; border-radius: 6px; padding: 4px 6px; margin-bottom: 6px; cursor: pointer; text-align: left;" onclick="openViewEditDiningCustomerModal(${activeOrder.id}, '${escapeHtml(displayName)}')" title="Nhấn để xem và sửa thông tin khách ăn">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span><i class="mdi mdi-account-circle"></i> <b>Khách:</b> ${escapeHtml(cusName)}</span>
+                        ${visits}
+                    </div>
+                    ${cusPhone ? `<div style="font-size:11px; color:#64748b;"><i class="mdi mdi-phone"></i> ${cusPhone}</div>` : ''}
+                    <div style="font-size: 10px; color: #0284c7; margin-top: 2px;"><i class="mdi mdi-pencil"></i> Nhấn để xem & sửa khách ăn</div>
+                </div>
+            `;
+        }
+
+        let resDetailHtml = '';
+        if (holdingRes) {
+            const visits = holdingRes.visitCount ? `<span class="badge bg-warning text-dark" style="font-size:10px; margin-left:3px;">Ghé ${holdingRes.visitCount} lần</span>` : '';
+            resDetailHtml = `
+                <div style="font-size: 12px; color: #b45309; font-weight: bold; background: #fef3c7; border: 1px dashed #f59e0b; border-radius: 6px; padding: 4px 6px; margin-bottom: 8px; cursor: pointer; text-align: left;" onclick="openViewEditReservationModal(${holdingRes.id}, '${escapeHtml(displayName)}')" title="Nhấn để xem và sửa thông tin khách đặt">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span><i class="mdi mdi-calendar-clock"></i> Lúc ${(holdingRes.startTime || '').slice(0, 5)}: ${escapeHtml(holdingRes.customerName || 'Khách đặt')}</span>
+                        ${visits}
+                    </div>
+                    <div style="font-size:11px; color:#b45309; font-weight:normal;"><i class="mdi mdi-clock-outline"></i> Còn khoảng <b>${Math.max(0, holdingRes.diff)} phút</b></div>
+                    ${holdingRes.customerPhone && holdingRes.customerPhone !== '0000000000' ? `<div style="font-size:11px; color:#92400e; font-weight:normal;"><i class="mdi mdi-phone"></i> ${escapeHtml(holdingRes.customerPhone)}</div>` : ''}
+                    <div style="font-size: 10px; color: #b45309; font-weight:normal; margin-top: 2px;"><i class="mdi mdi-pencil"></i> Nhấn để xem & sửa ca đặt</div>
+                </div>
+            `;
+        } else if (!hasActiveOrder && activeRes) {
+            // Có ca đặt trước nhưng > 60 phút: Bàn vẫn trống, hiển thị ca sau
+            resDetailHtml = `
+                <div style="font-size: 11px; color: #0284c7; background: #f0f9ff; border: 1px dashed #38bdf8; border-radius: 6px; padding: 4px 6px; margin-bottom: 6px; cursor: pointer; text-align: left;" onclick="openViewEditReservationModal(${activeRes.id}, '${escapeHtml(displayName)}')" title="Nhấn để xem và sửa ca đặt tiếp theo">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span><i class="mdi mdi-calendar"></i> <b>Ca sau:</b> ${(activeRes.startTime || '').slice(0, 5)}</span>
+                        <span class="badge bg-info text-white" style="font-size:9px;">${tableResList.length} ca</span>
+                    </div>
+                    <div style="font-size: 10px; color: #64748b;">Khách: <b>${escapeHtml(activeRes.customerName || 'Khách đặt')}</b></div>
+                </div>
+            `;
+        }
+
         return `
         <div class="col-md-3 col-sm-6 mb-4">
-            <div class="card ${cardBorder} h-100 shadow-sm">
-                <div class="card-body text-center p-3">
-                    <div class="display-4 mb-2">🍽️</div>
-                    <h5 class="card-title font-weight-bold mb-1">${escapeHtml(displayName)}</h5>
-                    <p class="text-muted text-small mb-2">Sức chứa: ${t.capacity || 4} chỗ</p>
-                    <span class="badge ${statusBadge} mb-3 p-2 d-inline-block">${statusText}</span>
+            <div class="card ${cardBorder} h-100 shadow-sm" style="${isReserved ? 'border-width: 2px;' : ''}">
+                <div class="card-body text-center p-3 d-flex flex-column justify-content-between">
+                    <div>
+                        <div class="display-4 mb-2">${isReserved ? '⏰' : '🍽️'}</div>
+                        <h5 class="card-title font-weight-bold mb-1">${escapeHtml(displayName)}</h5>
+                        <p class="text-muted text-small mb-2">Sức chứa: ${t.capacity || 4} chỗ</p>
+                        <span class="badge ${statusBadge} mb-2 p-2 d-inline-block font-weight-bold">${statusText}</span>
+                        ${diningDetailHtml}
+                        ${resDetailHtml}
+                    </div>
 
-                    <div class="dropdown">
+                    <div class="dropdown mt-2">
                         <button class="btn btn-sm btn-outline-secondary dropdown-toggle w-100" type="button" data-bs-toggle="dropdown" data-toggle="dropdown">
                             Trạng thái
                         </button>
                         <ul class="dropdown-menu shadow">
                             ${hasActiveOrder ? `
+                                <li><a class="dropdown-item text-primary font-weight-bold" href="javascript:void(0);" onclick="event.preventDefault(); openViewEditDiningCustomerModal(${activeOrder.id}, '${escapeHtml(displayName)}')"><i class="mdi mdi-account-edit"></i> 👤 Xem/sửa thông tin khách ăn</a></li>
+                                <li><hr class="dropdown-divider"></li>
                                 <li><a class="dropdown-item text-muted disabled" href="javascript:void(0);" style="opacity:0.6; cursor:not-allowed;" title="Bàn đang có đơn khách ăn bên POS, không thể chuyển bàn trống"><span style="text-decoration:line-through;">🟩 Đánh dấu TRỐNG</span> <small class="text-danger">(Có đơn ăn)</small></a></li>
+                            ` : isHoldingSoon ? `
+                                <li><a class="dropdown-item text-muted disabled" href="javascript:void(0);" style="opacity:0.6; cursor:not-allowed;" title="Bàn đang giữ cho khách đặt trước sắp tới giờ, không thể chuyển sang bàn trống"><span style="text-decoration:line-through;">🟩 Đánh dấu TRỐNG</span> <small class="text-warning">(Đang giữ bàn)</small></a></li>
                             ` : `
                                 <li><a class="dropdown-item" href="javascript:void(0);" onclick="event.preventDefault(); updateTableStatus(${t.id}, 'AVAILABLE')">🟩 Đánh dấu TRỐNG</a></li>
                             `}
-                            <li><a class="dropdown-item" href="javascript:void(0);" onclick="event.preventDefault(); updateTableStatus(${t.id}, 'OCCUPIED')">🟥 Đánh dấu CÓ KHÁCH</a></li>
-                            <li><a class="dropdown-item" href="javascript:void(0);" onclick="event.preventDefault(); updateTableStatus(${t.id}, 'RESERVED')">🟨 Đánh dấu ĐẶT TRƯỚC</a></li>
+                            ${hasActiveOrder ? `
+                                <li><a class="dropdown-item text-muted disabled" href="javascript:void(0);" style="opacity:0.6; cursor:not-allowed;" title="Bàn đang có đơn khách ăn, không cần mở lại"><span style="text-decoration:line-through;">🟥 Đánh dấu CÓ KHÁCH</span> <small class="text-danger">(Đang phục vụ)</small></a></li>
+                            ` : `
+                                <li><a class="dropdown-item" href="javascript:void(0);" onclick="event.preventDefault(); openAdminOpenTableModal(${t.id})">🟥 Đánh dấu CÓ KHÁCH (Mở đơn)</a></li>
+                            `}
+                            ${activeRes ? `
+                                <li><a class="dropdown-item text-warning font-weight-bold" href="javascript:void(0);" onclick="event.preventDefault(); openViewEditReservationModal(${activeRes.id}, '${escapeHtml(displayName)}')"><i class="mdi mdi-calendar-edit"></i> 📋 Xem/sửa thông tin khách đặt</a></li>
+                            ` : ''}
+                            ${hasActiveOrder ? `
+                                <li><a class="dropdown-item" href="javascript:void(0);" onclick="event.preventDefault(); openFutureReservationModal(${t.id})">🟨 Đặt ca sau (Khách tiếp)</a></li>
+                            ` : `
+                                <li><a class="dropdown-item" href="javascript:void(0);" onclick="event.preventDefault(); openFutureReservationModal(${t.id})">🟨 Đánh dấu ĐẶT TRƯỚC</a></li>
+                            `}
                             <li><hr class="dropdown-divider"></li>
                             ${(hasActiveOrder || t.status === 'OCCUPIED' || t.status === 'BUSY') ? `
                                 <li><a class="dropdown-item text-muted disabled" href="javascript:void(0);" style="opacity:0.6; cursor:not-allowed;" title="Bàn đang có khách hoặc có đơn, không thể xóa"><span style="text-decoration:line-through;">🗑️ Xóa bàn</span> <small class="text-danger">(Đang có đơn)</small></a></li>
+                            ` : isTableReserved ? `
+                                <li><a class="dropdown-item text-muted disabled" href="javascript:void(0);" style="opacity:0.6; cursor:not-allowed;" title="Bàn đang có lịch đặt trước, không thể xóa"><span style="text-decoration:line-through;">🗑️ Xóa bàn</span> <small class="text-danger">(Đã đặt trước)</small></a></li>
                             ` : `
                                 <li><a class="dropdown-item text-danger" href="javascript:void(0);" onclick="event.preventDefault(); deleteTable(${t.id})">🗑️ Xóa bàn</a></li>
                             `}
@@ -816,6 +1015,8 @@ function renderTablesGrid(tables) {
         </div>
         `;
     }).join('');
+
+    container.innerHTML = upcomingBannerHtml + cardsHtml;
 }
 
 function renderTablesListTable(tables) {
@@ -828,22 +1029,66 @@ function renderTablesListTable(tables) {
         return;
     }
 
+    const todayStr = new Date().toISOString().split('T')[0];
     const state = paginationState.tables;
     const paginatedData = tables.slice((state.page - 1) * state.size, state.page * state.size);
 
     tbody.innerHTML = paginatedData.map((t, idx) => {
         const activeOrder = (allOrdersData || []).find(o => o.tableId === t.id && o.status !== 'COMPLETED' && o.status !== 'CANCELLED');
         const hasActiveOrder = !!activeOrder || t.status === 'OCCUPIED' || t.status === 'BUSY';
+
+        const tableResList = (allReservationsData || []).filter(r => 
+            r.tableId === t.id && 
+            r.status !== 'CANCELLED' && 
+            r.status !== 'COMPLETED' &&
+            r.reservationDate === todayStr
+        );
+        tableResList.sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
+        const activeRes = tableResList[0];
+
+        let holdingRes = null;
+        const nowMinutes = new Date().getHours() * 60 + new Date().getMinutes();
+        for (const r of tableResList) {
+            if (r.startTime) {
+                const [h, m] = r.startTime.split(':').map(Number);
+                const resMin = h * 60 + m;
+                const diff = resMin - nowMinutes;
+                let endMin = resMin + 120;
+                if (r.endTime) {
+                    const [eh, em] = r.endTime.split(':').map(Number);
+                    endMin = eh * 60 + em;
+                }
+                if (diff <= 60 && nowMinutes <= endMin) {
+                    holdingRes = r;
+                    break;
+                }
+            }
+        }
+
+        const isReserved = !hasActiveOrder && !!holdingRes;
+        const hasReservation = (allReservationsData || []).some(r => r.tableId === t.id && r.status !== 'CANCELLED' && r.status !== 'COMPLETED');
+        const isTableReserved = isReserved || (t.status === 'RESERVED') || hasReservation;
+
+        const badgeClass = hasActiveOrder ? 'bg-danger' : (isReserved ? 'bg-warning text-dark' : 'bg-success');
+        const badgeText = hasActiveOrder ? 'Có khách' : (isReserved ? 'Đã đặt trước' : 'Bàn trống');
+
         return `
         <tr>
             <td>${(state.page - 1) * state.size + idx + 1}</td>
             <td><strong>${escapeHtml(t.tableName || t.name || ('Bàn #' + t.id))}</strong></td>
             <td>${t.capacity || 4} chỗ</td>
-            <td><span class="badge ${getTableBadgeClass(t.status)}">${translateTableStatus(t.status)}</span></td>
+            <td>
+                <span class="badge ${badgeClass}">${badgeText}</span>
+                ${holdingRes ? `<br><small class="text-danger font-weight-bold">Giữ bàn lúc ${(holdingRes.startTime || '').slice(0,5)}: ${escapeHtml(holdingRes.customerName || '')}</small>` : activeRes ? `<br><small class="text-muted"><i class="mdi mdi-calendar"></i> Ca sau ${(activeRes.startTime || '').slice(0,5)}: ${escapeHtml(activeRes.customerName || '')}</small>` : ''}
+            </td>
             <td>
                 ${hasActiveOrder ? `
                     <button class="btn btn-sm btn-outline-secondary" disabled title="Bàn đang có đơn hàng hoặc có khách, không thể xóa" style="opacity: 0.65; cursor: not-allowed;">
                         <i class="mdi mdi-lock"></i> Đang có đơn
+                    </button>
+                ` : isTableReserved ? `
+                    <button class="btn btn-sm btn-outline-secondary" disabled title="Bàn đang có lịch đặt trước, không thể xóa" style="opacity: 0.65; cursor: not-allowed;">
+                        <i class="mdi mdi-lock"></i> Đã đặt trước
                     </button>
                 ` : `
                     <button class="btn btn-sm btn-outline-danger" onclick="deleteTable(${t.id})">
@@ -900,18 +1145,15 @@ async function handleCreateTable(e) {
 
 async function updateTableStatus(id, newStatus) {
     const table = allTablesData.find(t => t.id === id);
-    if (newStatus === 'AVAILABLE' && table && table.status === 'OCCUPIED') {
-        // Chỉ chặn nếu bàn ĐANG CÓ ĐƠN HÀNG THỰC TẾ chưa thanh toán (từ bên Order/POS)
-        const hasActiveOrder = (allOrdersData || []).some(o => o.tableId === id && o.status !== 'COMPLETED' && o.status !== 'CANCELLED');
-        if (hasActiveOrder) {
-            Swal.fire({
-                icon: 'warning',
-                title: 'Không thể chuyển bàn trống!',
-                html: `Bàn <b>${table.tableName || id}</b> hiện đang có đơn gọi món từ bên Order chưa thanh toán!<br><br>Vui lòng thanh toán hoặc hủy đơn bên POS trước khi chuyển bàn trống.`,
-                confirmButtonColor: '#d33'
-            });
-            return;
-        }
+    const hasActiveOrder = (allOrdersData || []).some(o => o.tableId === id && o.status !== 'COMPLETED' && o.status !== 'CANCELLED');
+    if ((newStatus === 'AVAILABLE' || newStatus === 'RESERVED') && hasActiveOrder) {
+        Swal.fire({
+            icon: 'warning',
+            title: 'Bàn đang có khách ngồi ăn!',
+            html: `Bàn <b>${table ? (table.tableName || id) : id}</b> hiện đang có khách ngồi dùng bữa và có đơn gọi món chưa thanh toán!<br><br>Không thể đổi trạng thái bàn sang Trống hoặc Đặt trước khi khách đang dùng bữa.`,
+            confirmButtonColor: '#d33'
+        });
+        return;
     }
 
     try {
@@ -925,6 +1167,308 @@ async function updateTableStatus(id, newStatus) {
         showAlert("Cập nhật thất bại: " + err.message, "error");
     }
 }
+
+// -------------------------------------------------------------
+// TRA CỨU & XEM / SỬA THÔNG TIN KHÁCH ĂN & KHÁCH ĐẶT
+// -------------------------------------------------------------
+window.lookupCustomerByPhone = async function(phone, nameInputId, feedbackElemId) {
+    if (!phone || phone.trim().length < 8) {
+        const feedback = document.getElementById(feedbackElemId);
+        if (feedback) feedback.innerHTML = '';
+        return;
+    }
+    try {
+        const res = await fetchWithAuth(`/api/v1/customers/by-phone/${encodeURIComponent(phone.trim())}`);
+        if (res.data) {
+            const cus = res.data;
+            const nameInput = document.getElementById(nameInputId);
+            if (nameInput && (!nameInput.value || nameInput.value === 'Khách vãng lai')) {
+                nameInput.value = cus.fullName || '';
+            }
+            const feedback = document.getElementById(feedbackElemId);
+            if (feedback) {
+                const visits = cus.visitCount || 1;
+                feedback.innerHTML = `<span class="badge bg-success text-white p-1" style="font-size:11px;"><i class="mdi mdi-star"></i> 🌟 Khách quen! Đã từng ghé quán <b>${visits}</b> lần</span>`;
+            }
+        }
+    } catch(e) {
+        const feedback = document.getElementById(feedbackElemId);
+        if (feedback) {
+            feedback.innerHTML = `<span class="badge bg-light text-muted border p-1" style="font-size:11px;">✨ Khách mới (chưa có trong hệ thống)</span>`;
+        }
+    }
+};
+
+window.openViewEditDiningCustomerModal = async function(orderId, tableName) {
+    try {
+        const ordRes = await fetchWithAuth(`/api/v1/orders/${orderId}`);
+        const order = ordRes.data;
+        if (!order) throw new Error("Không tìm thấy thông tin đơn hàng!");
+
+        let customer = null;
+        if (order.customerId) {
+            try {
+                const cusRes = await fetchWithAuth(`/api/v1/customers/${order.customerId}`);
+                customer = cusRes.data;
+            } catch(e) {}
+        }
+
+        const cusName = (customer ? customer.fullName : order.customerName) || 'Khách vãng lai';
+        const cusPhone = (customer ? customer.phone : order.customerPhone) || '';
+        const visits = customer && customer.visitCount ? customer.visitCount : (order.visitCount || 1);
+        const visitBadge = visits > 1 
+            ? `<span class="badge bg-success text-white p-2" style="font-size:12px;"><i class="mdi mdi-star"></i> 🌟 Khách quen! Đã ghé quán <b>${visits}</b> lần</span>`
+            : `<span class="badge bg-info text-white p-2" style="font-size:12px;">✨ Khách mới ghé lần đầu</span>`;
+
+        const { value: formValues } = await Swal.fire({
+            title: `<div style="font-size:20px; font-weight:bold; color:#0284c7;"><i class="mdi mdi-account-edit"></i> Thông Tin Khách Ăn - ${tableName}</div>`,
+            html: `
+                <div style="text-align: left; font-size: 14px;">
+                    <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 10px; margin-bottom: 12px; display:flex; justify-content:space-between; align-items:center;">
+                        <div>
+                            <div style="font-weight:bold; color:#166534;">Mã đơn: #${order.orderCode}</div>
+                            <div style="font-size:12px; color:#4b5563;">Bàn: ${tableName}</div>
+                        </div>
+                        <div>${visitBadge}</div>
+                    </div>
+
+                    <div class="mb-2">
+                        <label class="form-label font-weight-bold mb-1">Tên khách hàng <span class="text-danger">*</span></label>
+                        <input id="swal-edit-cus-name" class="form-control" value="${escapeHtml(cusName)}" placeholder="Nhập tên khách hàng">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label font-weight-bold mb-1">Số điện thoại</label>
+                        <input id="swal-edit-cus-phone" class="form-control" value="${escapeHtml(cusPhone === '0000000000' ? '' : cusPhone)}" placeholder="Nhập số điện thoại">
+                        <div id="swal-edit-cus-phone-feedback" class="mt-1"></div>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label font-weight-bold mb-1">Ghi chú đơn hàng</label>
+                        <textarea id="swal-edit-order-note" class="form-control" rows="2" placeholder="Ghi chú món, phục vụ...">${escapeHtml(order.note || '')}</textarea>
+                    </div>
+                </div>
+            `,
+            didOpen: () => {
+                const phoneInput = document.getElementById('swal-edit-cus-phone');
+                if (phoneInput) {
+                    phoneInput.addEventListener('input', () => {
+                        window.lookupCustomerByPhone(phoneInput.value, 'swal-edit-cus-name', 'swal-edit-cus-phone-feedback');
+                    });
+                }
+            },
+            showCancelButton: true,
+            confirmButtonText: '<i class="mdi mdi-content-save"></i> Lưu thông tin',
+            cancelButtonText: 'Đóng',
+            confirmButtonColor: '#0284c7',
+            preConfirm: () => {
+                const name = (document.getElementById('swal-edit-cus-name').value || '').trim();
+                const phone = (document.getElementById('swal-edit-cus-phone').value || '').trim() || '0000000000';
+                const note = (document.getElementById('swal-edit-order-note').value || '').trim();
+                if (!name) {
+                    Swal.showValidationMessage('Tên khách hàng không được để trống!');
+                    return false;
+                }
+                return { name, phone, note };
+            }
+        });
+
+        if (!formValues) return;
+
+        // Check-in / lưu khách hàng mới hoặc cập nhật
+        const cusRes = await fetchWithAuth('/api/v1/customers/check-in', {
+            method: 'POST',
+            body: JSON.stringify({ fullName: formValues.name, phone: formValues.phone })
+        });
+        const newCustomer = cusRes.data;
+        if (newCustomer && newCustomer.id) {
+            await fetchWithAuth(`/api/v1/orders/${orderId}/customer/${newCustomer.id}`, {
+                method: 'PUT'
+            }).catch(e => console.warn(e));
+        }
+
+        // Cập nhật ghi chú order
+        await fetchWithAuth(`/api/v1/orders/${orderId}/note`, {
+            method: 'PUT',
+            body: JSON.stringify({ note: formValues.note })
+        });
+
+        Swal.fire({
+            icon: 'success',
+            title: 'Cập nhật thành công! 🎉',
+            text: `Đã lưu thông tin khách ăn cho ${tableName}`,
+            timer: 1500,
+            showConfirmButton: false
+        });
+
+        loadTables();
+        if (typeof loadOrders === 'function') loadOrders();
+
+    } catch (err) {
+        Swal.fire({ icon: 'error', title: 'Lỗi cập nhật', text: err.message, confirmButtonColor: '#d33' });
+    }
+};
+
+window.openViewEditReservationModal = async function(reservationId, tableName, tableId) {
+    try {
+        let res = null;
+        const parsedId = parseInt(reservationId);
+        try {
+            const resvRes = await fetchWithAuth(`/api/v1/reservations/${parsedId}`);
+            res = resvRes.data;
+        } catch(fetchErr) {
+            try {
+                const allResRes = await fetchWithAuth('/api/v1/reservations/all');
+                allReservationsData = allResRes.data || [];
+                const checkTable = tableId ? parseInt(tableId) : parsedId;
+                const found = allReservationsData.find(r => (r.id === parsedId || r.tableId === checkTable) && r.status !== 'CANCELLED' && r.status !== 'COMPLETED');
+                if (found) {
+                    res = found;
+                } else {
+                    throw fetchErr;
+                }
+            } catch(e2) {
+                throw fetchErr;
+            }
+        }
+        if (!res) throw new Error("Không tìm thấy thông tin ca đặt!");
+
+        let customer = null;
+        if (res.customerId) {
+            try {
+                const cusRes = await fetchWithAuth(`/api/v1/customers/${res.customerId}`);
+                customer = cusRes.data;
+            } catch(e) {}
+        }
+
+        const cusName = (customer ? customer.fullName : res.customerName) || 'Khách đặt';
+        const cusPhone = (customer ? customer.phone : res.customerPhone) || '';
+        const visits = customer && customer.visitCount ? customer.visitCount : (res.visitCount || 1);
+        const visitBadge = visits > 1 
+            ? `<span class="badge bg-success text-white p-2" style="font-size:12px;"><i class="mdi mdi-star"></i> 🌟 Khách quen! Đã ghé quán <b>${visits}</b> lần</span>`
+            : `<span class="badge bg-info text-white p-2" style="font-size:12px;">✨ Khách mới đặt lần đầu</span>`;
+
+        const { value: formValues } = await Swal.fire({
+            title: `<div style="font-size:20px; font-weight:bold; color:#b45309;"><i class="mdi mdi-calendar-edit"></i> Thông Tin Khách Đặt - ${tableName}</div>`,
+            html: `
+                <div style="text-align: left; font-size: 14px;">
+                    <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 10px; margin-bottom: 12px; display:flex; justify-content:space-between; align-items:center;">
+                        <div>
+                            <div style="font-weight:bold; color:#92400e;">Mã đặt: #${res.reservationCode}</div>
+                            <div style="font-size:12px; color:#6b7280;">Bàn: ${tableName}</div>
+                        </div>
+                        <div>${visitBadge}</div>
+                    </div>
+
+                    <div class="mb-2">
+                        <label class="form-label font-weight-bold mb-1">Tên khách hàng <span class="text-danger">*</span></label>
+                        <input id="swal-edit-res-name" class="form-control" value="${escapeHtml(cusName)}" placeholder="Nhập tên khách hàng">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label font-weight-bold mb-1">Số điện thoại <span class="text-danger">*</span></label>
+                        <input id="swal-edit-res-phone" class="form-control" value="${escapeHtml(cusPhone === '0000000000' ? '' : cusPhone)}" placeholder="Nhập số điện thoại">
+                        <div id="swal-edit-res-phone-feedback" class="mt-1"></div>
+                    </div>
+                    <div class="row g-2 mb-2">
+                        <div class="col-6">
+                            <label class="form-label font-weight-bold mb-1">Ngày đặt <span class="text-danger">*</span></label>
+                            <input id="swal-edit-res-date" type="date" class="form-control" value="${res.reservationDate}">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label font-weight-bold mb-1">Số lượng khách</label>
+                            <input id="swal-edit-res-guests" type="number" min="1" class="form-control" value="${res.numberOfGuests || 4}">
+                        </div>
+                    </div>
+                    <div class="row g-2 mb-2">
+                        <div class="col-6">
+                            <label class="form-label font-weight-bold mb-1">Giờ bắt đầu <span class="text-danger">*</span></label>
+                            <input id="swal-edit-res-start" type="time" class="form-control" value="${(res.startTime || '').slice(0,5)}">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label font-weight-bold mb-1">Giờ kết thúc <span class="text-danger">*</span></label>
+                            <input id="swal-edit-res-end" type="time" class="form-control" value="${(res.endTime || '').slice(0,5)}">
+                        </div>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label font-weight-bold mb-1">Ghi chú / Tiền cọc</label>
+                        <input id="swal-edit-res-note" class="form-control" value="${escapeHtml(res.note || '')}" placeholder="Ghi chú yêu cầu riêng của khách...">
+                    </div>
+                </div>
+            `,
+            didOpen: () => {
+                const phoneInput = document.getElementById('swal-edit-res-phone');
+                if (phoneInput) {
+                    phoneInput.addEventListener('input', () => {
+                        window.lookupCustomerByPhone(phoneInput.value, 'swal-edit-res-name', 'swal-edit-res-phone-feedback');
+                    });
+                }
+            },
+            showCancelButton: true,
+            confirmButtonText: '<i class="mdi mdi-content-save"></i> Lưu cập nhật',
+            cancelButtonText: 'Đóng',
+            confirmButtonColor: '#b45309',
+            preConfirm: () => {
+                const name = (document.getElementById('swal-edit-res-name').value || '').trim();
+                const phone = (document.getElementById('swal-edit-res-phone').value || '').trim();
+                const date = document.getElementById('swal-edit-res-date').value;
+                const start = document.getElementById('swal-edit-res-start').value;
+                const end = document.getElementById('swal-edit-res-end').value;
+                const guests = parseInt(document.getElementById('swal-edit-res-guests').value) || 4;
+                const note = (document.getElementById('swal-edit-res-note').value || '').trim();
+
+                if (!name || !phone) {
+                    Swal.showValidationMessage('Vui lòng nhập tên và số điện thoại khách!');
+                    return false;
+                }
+                if (!date || !start || !end) {
+                    Swal.showValidationMessage('Vui lòng chọn ngày và giờ đặt!');
+                    return false;
+                }
+                if (start >= end) {
+                    Swal.showValidationMessage('Giờ kết thúc phải sau giờ bắt đầu!');
+                    return false;
+                }
+                return { name, phone, date, start: start.length === 5 ? start + ':00' : start, end: end.length === 5 ? end + ':00' : end, guests, note };
+            }
+        });
+
+        if (!formValues) return;
+
+        // Cập nhật customer
+        if (res.customerId) {
+            await fetchWithAuth(`/api/v1/customers/${res.customerId}`, {
+                method: 'PUT',
+                body: JSON.stringify({ fullName: formValues.name, phone: formValues.phone })
+            });
+        }
+
+        // Cập nhật reservation
+        await fetchWithAuth(`/api/v1/reservations/${res.id || reservationId}`, {
+            method: 'PUT',
+            body: JSON.stringify({
+                reservationCode: res.reservationCode,
+                customerId: res.customerId,
+                tableId: res.tableId,
+                reservationDate: formValues.date,
+                startTime: formValues.start,
+                endTime: formValues.end,
+                numberOfGuests: formValues.guests,
+                note: formValues.note
+            })
+        });
+
+        Swal.fire({
+            icon: 'success',
+            title: 'Cập nhật thành công! 🎉',
+            text: `Đã lưu thông tin ca đặt của khách ${formValues.name}`,
+            timer: 1500,
+            showConfirmButton: false
+        });
+
+        loadTables();
+
+    } catch (err) {
+        Swal.fire({ icon: 'error', title: 'Lỗi cập nhật', text: err.message, confirmButtonColor: '#d33' });
+    }
+};
 
 window.openAdminSwitchTableModal = async function(orderId, oldTableId, oldTableName) {
     const emptyTables = allTablesData.filter(t => t.id !== oldTableId && t.status !== 'OCCUPIED');
@@ -983,17 +1527,213 @@ window.openAdminSwitchTableModal = async function(orderId, oldTableId, oldTableN
     }
 };
 
+window.openAdminOpenTableModal = async function(tableId, tableName) {
+    const table = allTablesData.find(t => t.id === tableId);
+    const cleanTableName = String(tableName || (table ? table.tableName : ('Bàn #' + tableId))).trim();
+    const displayName = cleanTableName.toLowerCase().startsWith('bàn') ? cleanTableName : ('Bàn ' + cleanTableName);
+
+    // Kiểm tra nếu bàn đang có đơn hàng hoạt động
+    const activeOrder = (allOrdersData || []).find(o => o.tableId === tableId && o.status !== 'COMPLETED' && o.status !== 'CANCELLED');
+    if (activeOrder) {
+        Swal.fire({
+            icon: 'info',
+            title: `${displayName} đang phục vụ`,
+            html: `Bàn hiện đang có đơn hàng hoạt động <b>#${activeOrder.orderCode}</b>.<br>Bạn có muốn mở ngay trang gọi món không?`,
+            showCancelButton: true,
+            confirmButtonText: '<i class="mdi mdi-food"></i> Vào trang Gọi món (POS)',
+            cancelButtonText: 'Đóng',
+            confirmButtonColor: '#0284c7'
+        }).then((res) => {
+            if (res.isConfirmed) {
+                window.location.href = `/order?tableId=${tableId}&orderId=${activeOrder.id}`;
+            }
+        });
+        return;
+    }
+
+    // Kiểm tra nếu bàn đang có lịch đặt trước hôm nay
+    const todayStr = new Date().toISOString().split('T')[0];
+    const tableResList = (allReservationsData || []).filter(r => 
+        r.tableId === tableId && 
+        r.status !== 'CANCELLED' && 
+        r.status !== 'COMPLETED' &&
+        r.reservationDate === todayStr
+    );
+    tableResList.sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
+    const activeRes = tableResList[0];
+
+    let defaultName = '';
+    let defaultPhone = '';
+    let reservationPromptHtml = '';
+
+    if (activeRes) {
+        reservationPromptHtml = `
+            <div class="alert alert-warning p-2 mb-2" style="font-size: 13px; background: #fff8e1; border: 1px solid #ffe082;">
+                <i class="mdi mdi-bell-ring text-warning"></i> <b>Lưu ý:</b> Bàn này đang có ca đặt trước lúc <b>${(activeRes.startTime || '').slice(0,5)}</b> của khách <b>${escapeHtml(activeRes.customerName || 'Khách đặt')}</b>.
+                <div class="mt-1">
+                    <button type="button" class="btn btn-xs btn-outline-primary" style="font-size: 11px; padding: 2px 6px;" onclick="window.fillReservedGuestInfo('${escapeHtml(activeRes.customerName || '')}', '${escapeHtml(activeRes.customerPhone || '')}')">
+                        👉 Dùng thông tin khách đặt này
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+
+    const { value: formValues } = await Swal.fire({
+        title: `<div style="font-size:20px; font-weight:bold; color:#dc3545;"><i class="mdi mdi-silverware-fork-knife"></i> Mở Bàn Đón Khách - ${displayName}</div>`,
+        html: `
+            <div style="text-align: left; font-size: 14px;">
+                ${reservationPromptHtml}
+                <p class="text-muted mb-2"><small>Hệ thống sẽ tạo đơn hàng và chuyển trạng thái bàn sang Có khách (đồng bộ sang POS):</small></p>
+                <div class="mb-2">
+                    <label class="form-label font-weight-bold mb-1">Tên khách hàng</label>
+                    <input id="swal-order-name" class="form-control" placeholder="Ví dụ: Khách vãng lai, Anh Nam..." value="${defaultName}">
+                </div>
+                <div class="mb-2">
+                    <label class="form-label font-weight-bold mb-1">Số điện thoại</label>
+                    <input id="swal-order-phone" class="form-control" placeholder="Ví dụ: 0912345678 (tùy chọn)" value="${defaultPhone}">
+                    <div id="swal-order-phone-feedback" class="mt-1"></div>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label font-weight-bold mb-1">Ghi chú đơn hàng</label>
+                    <input id="swal-order-note" class="form-control" placeholder="Ví dụ: Khách ngồi tầng 2, ít cay...">
+                </div>
+            </div>
+        `,
+        didOpen: () => {
+            window.fillReservedGuestInfo = function(name, phone) {
+                const nameInput = document.getElementById('swal-order-name');
+                const phoneInput = document.getElementById('swal-order-phone');
+                if (nameInput) nameInput.value = name;
+                if (phoneInput) {
+                    phoneInput.value = phone;
+                    window.lookupCustomerByPhone(phone, 'swal-order-name', 'swal-order-phone-feedback');
+                }
+            };
+            const phoneInput = document.getElementById('swal-order-phone');
+            if (phoneInput) {
+                phoneInput.addEventListener('input', () => {
+                    window.lookupCustomerByPhone(phoneInput.value, 'swal-order-name', 'swal-order-phone-feedback');
+                });
+            }
+        },
+        focusConfirm: false,
+        showCancelButton: true,
+        confirmButtonText: '<i class="mdi mdi-check"></i> Xác nhận mở bàn',
+        cancelButtonText: 'Hủy bỏ',
+        confirmButtonColor: '#dc3545',
+        preConfirm: () => {
+            const name = (document.getElementById('swal-order-name').value || '').trim() || 'Khách vãng lai';
+            const phone = (document.getElementById('swal-order-phone').value || '').trim() || '0000000000';
+            const note = (document.getElementById('swal-order-note').value || '').trim();
+            return { name, phone, note };
+        }
+    });
+
+    if (!formValues) return;
+
+    try {
+        // 1. Check-in khách hàng
+        const cusRes = await fetchWithAuth('/api/v1/customers/check-in', {
+            method: 'POST',
+            body: JSON.stringify({ fullName: formValues.name, phone: formValues.phone })
+        });
+        let customerId = cusRes && cusRes.data ? cusRes.data.id : null;
+        if (!customerId) {
+            try {
+                const walkInRes = await fetchWithAuth('/api/v1/customers/by-phone/0000000000');
+                if (walkInRes && walkInRes.data) customerId = walkInRes.data.id;
+            } catch(e) {}
+        }
+        if (!customerId) customerId = 1;
+
+        // 2. Chuyển trạng thái bàn sang OCCUPIED
+        await fetchWithAuth(`/api/v1/tables/${tableId}/status`, {
+            method: 'PATCH',
+            body: JSON.stringify({ status: 'OCCUPIED' })
+        });
+
+        // 3. Nếu là khách đặt trước đến ăn thì hoàn thành reservation
+        if (activeRes && formValues.name === activeRes.customerName) {
+            await fetchWithAuth(`/api/v1/reservations/${activeRes.id}/status?status=COMPLETED`, {
+                method: 'PUT'
+            }).catch(e => console.warn(e));
+        }
+
+        // 4. Tạo Order mới
+        const userId = localStorage.getItem('userId') || 1;
+        const orderCode = 'ORD' + Date.now().toString().slice(-6);
+        let finalNote = formValues.note;
+        if (activeRes && formValues.name === activeRes.customerName) {
+            finalNote = (finalNote ? finalNote + ' | ' : '') + `Khách đặt trước lúc ${(activeRes.startTime || '').slice(0,5)}`;
+        }
+
+        const ordRes = await fetchWithAuth('/api/v1/orders/add', {
+            method: 'POST',
+            body: JSON.stringify({
+                orderCode: orderCode,
+                tableId: tableId,
+                customerId: customerId,
+                userId: parseInt(userId),
+                note: finalNote
+            })
+        });
+
+        const newOrder = ordRes.data;
+
+        await Swal.fire({
+            icon: 'success',
+            title: 'Mở bàn thành công! 🎉',
+            html: `Đã mở <b>${displayName}</b> cho <b>${escapeHtml(formValues.name)}</b>!<br>Mã đơn hàng: <b class="text-primary">#${orderCode}</b>.<br><br>Hệ thống đã đồng bộ trạng thái Có khách sang POS.`,
+            showCancelButton: true,
+            confirmButtonText: '<i class="mdi mdi-silverware"></i> Chuyển sang Gọi món ngay',
+            cancelButtonText: 'Ở lại quản lý bàn',
+            confirmButtonColor: '#28a745',
+            cancelButtonColor: '#6c757d'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                window.location.href = `/order?tableId=${tableId}&orderId=${newOrder ? newOrder.id : ''}`;
+            } else {
+                loadTables();
+                if (typeof loadOrders === 'function') loadOrders();
+            }
+        });
+
+    } catch (err) {
+        Swal.fire({
+            icon: 'error',
+            title: 'Lỗi mở bàn',
+            text: err.message,
+            confirmButtonColor: '#d33'
+        });
+    }
+};
+
 window.openFutureReservationModal = async function(tableId, tableName) {
+    const table = allTablesData.find(t => t.id === tableId);
+    const cleanTableName = String(tableName || (table ? table.tableName : ('Bàn #' + tableId))).trim();
+    const displayName = cleanTableName.toLowerCase().startsWith('bàn') ? cleanTableName : ('Bàn ' + cleanTableName);
+
+    const isCurrentlyOccupied = (allOrdersData || []).some(o => o.tableId === tableId && o.status !== 'COMPLETED' && o.status !== 'CANCELLED');
+
     const today = new Date().toISOString().split('T')[0];
     const nowHour = new Date().getHours();
     const nextStartHour = String(Math.min(nowHour + 1, 23)).padStart(2, '0') + ':00';
     const nextEndHour = String(Math.min(nowHour + 3, 23)).padStart(2, '0') + ':00';
 
+    const modalTitle = isCurrentlyOccupied 
+        ? `<div style="font-size:20px; font-weight:bold; color:#17a2b8;"><i class="mdi mdi-calendar-clock"></i> Đặt ${displayName} Giờ Tiếp Theo</div>`
+        : `<div style="font-size:20px; font-weight:bold; color:#f59e0b;"><i class="mdi mdi-calendar-check"></i> Đặt Trước ${displayName}</div>`;
+
+    const modalSubtitle = isCurrentlyOccupied
+        ? `<small>Bàn hiện đang có khách. Bạn đang đặt trước bàn này cho khách tiếp theo vào khung giờ sau:</small>`
+        : `<small>Nhập thông tin khách đặt trước để giữ bàn và đồng bộ hóa sang hệ thống POS:</small>`;
+
     const { value: formValues } = await Swal.fire({
-        title: `<div style="font-size:20px; font-weight:bold; color:#17a2b8;"><i class="mdi mdi-calendar-clock"></i> Đặt ${tableName} Giờ Tiếp Theo</div>`,
+        title: modalTitle,
         html: `
             <div style="text-align: left; font-size: 14px;">
-                <p class="text-muted mb-2"><small>Bàn hiện đang có khách. Bạn đang đặt trước bàn này cho khách tiếp theo vào khung giờ sau:</small></p>
+                <p class="text-muted mb-2">${modalSubtitle}</p>
                 <div class="mb-2">
                     <label class="form-label font-weight-bold mb-1">Tên khách hàng *</label>
                     <input id="swal-res-name" class="form-control" placeholder="Nhập tên khách hàng">
@@ -1001,6 +1741,7 @@ window.openFutureReservationModal = async function(tableId, tableName) {
                 <div class="mb-2">
                     <label class="form-label font-weight-bold mb-1">Số điện thoại *</label>
                     <input id="swal-res-phone" class="form-control" placeholder="Nhập số điện thoại">
+                    <div id="swal-res-phone-feedback" class="mt-1"></div>
                 </div>
                 <div class="row g-2 mb-2">
                     <div class="col-6">
@@ -1009,7 +1750,7 @@ window.openFutureReservationModal = async function(tableId, tableName) {
                     </div>
                     <div class="col-6">
                         <label class="form-label font-weight-bold mb-1">Số lượng khách</label>
-                        <input id="swal-res-guests" type="number" min="1" class="form-control" value="4">
+                        <input id="swal-res-guests" type="number" min="1" class="form-control" value="${table ? (table.capacity || 4) : 4}">
                     </div>
                 </div>
                 <div class="row g-2 mb-2">
@@ -1032,6 +1773,14 @@ window.openFutureReservationModal = async function(tableId, tableName) {
                 </div>
             </div>
         `,
+        didOpen: () => {
+            const phoneInput = document.getElementById('swal-res-phone');
+            if (phoneInput) {
+                phoneInput.addEventListener('input', () => {
+                    window.lookupCustomerByPhone(phoneInput.value, 'swal-res-name', 'swal-res-phone-feedback');
+                });
+            }
+        },
         focusConfirm: false,
         showCancelButton: true,
         confirmButtonText: '<i class="mdi mdi-check"></i> Xác nhận đặt bàn',
@@ -1080,7 +1829,7 @@ window.openFutureReservationModal = async function(tableId, tableName) {
 
         const resCode = 'RES' + Date.now().toString().slice(-8);
 
-        // 2. Tạo Reservation cho khung giờ tiếp theo
+        // 2. Tạo Reservation
         await fetchWithAuth('/api/v1/reservations/add', {
             method: 'POST',
             body: JSON.stringify({
@@ -1095,10 +1844,26 @@ window.openFutureReservationModal = async function(tableId, tableName) {
             })
         });
 
+        // 3. Nếu bàn hiện tại đang trống, chỉ chuyển sang RESERVED nếu trong vòng 60 phút tới giờ hẹn hôm nay
+        if (!isCurrentlyOccupied) {
+            const todayStr = new Date().toISOString().split('T')[0];
+            const nowMinutes = new Date().getHours() * 60 + new Date().getMinutes();
+            const [sh, sm] = formValues.start.split(':').map(Number);
+            const startMin = sh * 60 + sm;
+            const diffMin = startMin - nowMinutes;
+            const isWithin60 = (formValues.date === todayStr) && (diffMin <= 60 && diffMin >= -120);
+
+            const targetStatus = isWithin60 ? 'RESERVED' : 'AVAILABLE';
+            await fetchWithAuth(`/api/v1/tables/${tableId}/status`, {
+                method: 'PATCH',
+                body: JSON.stringify({ status: targetStatus })
+            }).catch(e => console.warn(e));
+        }
+
         Swal.fire({
             icon: 'success',
-            title: 'Đặt bàn thành công!',
-            html: `Đã đặt trước <b>${tableName}</b> cho khách <b>${formValues.name}</b> vào lúc <b>${formValues.start.slice(0,5)} - ${formValues.end.slice(0,5)}</b> ngày <b>${formValues.date}</b>.<br><br><small class="text-muted">Khách hiện tại ở bàn vẫn tiếp tục dùng bữa bình thường.</small>`,
+            title: 'Đặt bàn thành công! 🎉',
+            html: `Đã đặt trước <b>${displayName}</b> cho khách <b>${escapeHtml(formValues.name)}</b> (SĐT: ${escapeHtml(formValues.phone)}) vào lúc <b>${formValues.start.slice(0,5)} - ${formValues.end.slice(0,5)}</b> ngày <b>${formValues.date}</b>.<br><br><span class="badge bg-success">Đã đồng bộ hóa sang POS</span>`,
             confirmButtonColor: '#28a745'
         });
 
@@ -1150,6 +1915,9 @@ window.viewFutureReservationsAdmin = async function(tableId, tableName) {
                 </div>
                 ${r.note ? `<div style="font-size: 12px; color: #b45309; background: #fef3c7; padding: 4px 8px; border-radius: 4px; margin-top: 5px;">📝 ${escapeHtml(r.note)}</div>` : ''}
                 <div style="margin-top: 8px; padding-top: 6px; border-top: 1px dashed #ddd; display: flex; justify-content: flex-end; gap: 6px;">
+                    <button class="btn btn-primary btn-xs" style="font-size: 11px; font-weight: bold; padding: 4px 10px; border-radius: 4px; background: #0284c7; color: #fff; border: none;" onclick="Swal.close(); openViewEditReservationModal(${r.id}, '${escapeHtml(displayName)}')">
+                        <i class="mdi mdi-pencil"></i> Sửa ca đặt
+                    </button>
                     <button class="btn btn-warning btn-xs" style="font-size: 11px; font-weight: bold; padding: 4px 10px; border-radius: 4px; background: #f59e0b; color: #fff; border: none;" onclick="Swal.close(); switchReservationTableAdmin(${r.id}, ${tableId}, '${escapeHtml(displayName)}', '${escapeHtml(r.customerName)}')">
                         <i class="mdi mdi-swap-horizontal"></i> Chuyển sang bàn khác
                     </button>
@@ -1289,6 +2057,17 @@ async function deleteTable(id) {
             icon: 'warning',
             title: 'Không thể xóa bàn!',
             html: `<b>${escapeHtml(tableName)}</b> hiện đang có khách hoặc có đơn hàng chưa hoàn tất!<br><br>Vui lòng hoàn tất hoặc hủy đơn hàng trước khi xóa bàn.`,
+            confirmButtonColor: '#d33'
+        });
+        return;
+    }
+
+    const tableRes = (allReservationsData || []).find(r => r.tableId === id && r.status !== 'CANCELLED' && r.status !== 'COMPLETED');
+    if (tableRes || (table && table.status === 'RESERVED')) {
+        Swal.fire({
+            icon: 'warning',
+            title: 'Không thể xóa bàn!',
+            html: `<b>${escapeHtml(tableName)}</b> hiện đang có lịch khách đặt trước${tableRes ? ` (Lúc ${(tableRes.startTime || '').slice(0,5)}: ${escapeHtml(tableRes.customerName || 'Khách đặt')})` : ''}!<br><br>Vui lòng hủy ca đặt trước hoặc chuyển sang bàn khác trước khi xóa bàn.`,
             confirmButtonColor: '#d33'
         });
         return;

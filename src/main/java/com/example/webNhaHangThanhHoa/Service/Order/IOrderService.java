@@ -26,6 +26,16 @@ public interface IOrderService {
             Long newTableId
     );
 
+    OrderDto updateOrderNote(
+            Long id,
+            String note
+    );
+
+    OrderDto updateOrderCustomer(
+            Long id,
+            Long customerId
+    );
+
     void deleteOrder(Long id);
 
     List<OrderDto> getByTable(Long tableId);

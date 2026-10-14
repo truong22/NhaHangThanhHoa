@@ -351,6 +351,10 @@ public class InvoiceService
                 subtotal
         );
 
+        invoice.setDiscountPercent(
+                discountPercent != null ? discountPercent : BigDecimal.ZERO
+        );
+
         /*
          * Lưu tổng tiền đã giảm.
          *

@@ -181,6 +181,45 @@ public class OrderController {
         }
     }
 
+    @PutMapping("/{id}/note")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF', 'CASHIER')")
+    public ResponseEntity<ApiResponse> updateOrderNote(
+            @PathVariable Long id,
+            @RequestBody java.util.Map<String, String> body) {
+        try {
+            String note = body != null ? body.get("note") : "";
+            return ResponseEntity.ok(
+                    new ApiResponse(
+                            "Cập nhật ghi chú đơn hàng thành công",
+                            orderService.updateOrderNote(id, note)
+                    )
+            );
+        } catch (RuntimeException e) {
+            return ResponseEntity
+                    .status(HttpStatus.BAD_REQUEST)
+                    .body(new ApiResponse(e.getMessage(), null));
+        }
+    }
+
+    @PutMapping("/{id}/customer/{customerId}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF', 'CASHIER')")
+    public ResponseEntity<ApiResponse> updateOrderCustomer(
+            @PathVariable Long id,
+            @PathVariable Long customerId) {
+        try {
+            return ResponseEntity.ok(
+                    new ApiResponse(
+                            "Cập nhật khách hàng cho đơn thành công",
+                            orderService.updateOrderCustomer(id, customerId)
+                    )
+            );
+        } catch (RuntimeException e) {
+            return ResponseEntity
+                    .status(HttpStatus.BAD_REQUEST)
+                    .body(new ApiResponse(e.getMessage(), null));
+        }
+    }
+
 
     @DeleteMapping("/{id}")@PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse> deleteOrder(

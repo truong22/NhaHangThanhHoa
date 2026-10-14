@@ -33,7 +33,7 @@ public class CustomerController {
 
         // API Xem danh sách toàn bộ khách hàng (CHỈ DÀNH CHO ADMIN)
         @GetMapping
-       @PreAuthorize("hasRole('ADMIN')")
+        @PreAuthorize("hasAnyRole('ADMIN', 'STAFF', 'CASHIER')")
         public ResponseEntity<ApiResponse> getAllCustomers() {
             try {
                 List<customers> list = customerService.getAllCustomers();
@@ -43,6 +43,56 @@ public class CustomerController {
             } catch (Exception e) {
                 return ResponseEntity.badRequest().body(
                         new ApiResponse("Lỗi: " + e.getMessage(), null)
+                );
+            }
+        }
+
+        // API Tìm khách hàng theo SĐT (để kiểm tra khách quen, số lần ghé)
+        @GetMapping("/by-phone/{phone}")
+        @PreAuthorize("hasAnyRole('ADMIN', 'STAFF', 'CASHIER')")
+        public ResponseEntity<ApiResponse> getCustomerByPhone(@PathVariable String phone) {
+            try {
+                customers customer = customerService.getCustomerByPhone(phone);
+                return ResponseEntity.ok(
+                        new ApiResponse("Tìm thấy thông tin khách hàng", customer)
+                );
+            } catch (Exception e) {
+                return ResponseEntity.status(404).body(
+                        new ApiResponse(e.getMessage(), null)
+                );
+            }
+        }
+
+        // API Lấy chi tiết khách hàng theo ID
+        @GetMapping("/{id}")
+        @PreAuthorize("hasAnyRole('ADMIN', 'STAFF', 'CASHIER')")
+        public ResponseEntity<ApiResponse> getCustomerById(@PathVariable Long id) {
+            try {
+                customers customer = customerService.getCustomerById(id);
+                return ResponseEntity.ok(
+                        new ApiResponse("Tìm thấy thông tin khách hàng", customer)
+                );
+            } catch (Exception e) {
+                return ResponseEntity.status(404).body(
+                        new ApiResponse(e.getMessage(), null)
+                );
+            }
+        }
+
+        // API Sửa thông tin khách hàng (Tên, SĐT)
+        @PutMapping("/{id}")
+        @PreAuthorize("hasAnyRole('ADMIN', 'STAFF', 'CASHIER')")
+        public ResponseEntity<ApiResponse> updateCustomer(
+                @PathVariable Long id,
+                @RequestBody CustomerRequest request) {
+            try {
+                customers updated = customerService.updateCustomer(id, request);
+                return ResponseEntity.ok(
+                        new ApiResponse("Cập nhật thông tin khách hàng thành công!", updated)
+                );
+            } catch (Exception e) {
+                return ResponseEntity.badRequest().body(
+                        new ApiResponse("Lỗi cập nhật khách hàng: " + e.getMessage(), null)
                 );
             }
         }

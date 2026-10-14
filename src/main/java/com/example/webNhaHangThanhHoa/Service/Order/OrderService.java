@@ -305,6 +305,26 @@ public class OrderService
         );
     }
 
+    @Override
+    @Transactional
+    public OrderDto updateOrderNote(Long id, String note) {
+        orders order = orderRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy Order với id: " + id));
+        order.setNote(note);
+        return convertToDto(orderRepository.save(order));
+    }
+
+    @Override
+    @Transactional
+    public OrderDto updateOrderCustomer(Long id, Long customerId) {
+        orders order = orderRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy Order với id: " + id));
+        customers customer = customerRepository.findById(customerId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy khách hàng với id: " + customerId));
+        order.setCustomer(customer);
+        return convertToDto(orderRepository.save(order));
+    }
+
 
     // =====================================================
     // DELETE
@@ -493,6 +513,14 @@ public class OrderService
 
             dto.setCustomerName(
                     order.getCustomer().getFullName()
+            );
+
+            dto.setCustomerPhone(
+                    order.getCustomer().getPhone()
+            );
+
+            dto.setVisitCount(
+                    order.getCustomer().getVisitCount()
             );
         }
 

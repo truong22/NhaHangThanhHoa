@@ -286,7 +286,8 @@ public class ReservationController {
     // DELETE
     // =====================================================
 
-    @DeleteMapping("/{id}")@PreAuthorize("hasAnyRole('ADMIN', 'CASHIER')")
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF', 'CASHIER')")
     public ResponseEntity<ApiResponse> deleteReservation(
             @PathVariable Long id) {
 
@@ -336,6 +337,45 @@ public class ReservationController {
                                     null
                             )
                     );
+        }
+    }
+
+    // =====================================================
+    // UPDATE STATUS
+    // =====================================================
+
+    @PutMapping("/{id}/status")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF', 'CASHIER')")
+    public ResponseEntity<ApiResponse> updateReservationStatus(
+            @PathVariable Long id,
+            @RequestParam String status) {
+
+        try {
+            if ("CANCELLED".equalsIgnoreCase(status)) {
+                reservationService.deleteReservation(id);
+                return ResponseEntity.ok(
+                        new ApiResponse(
+                                "Hủy đặt bàn thành công",
+                                null
+                        )
+                );
+            }
+
+            return ResponseEntity.ok(
+                    new ApiResponse(
+                            "Cập nhật trạng thái đặt bàn thành công",
+                            null
+                    )
+            );
+
+        } catch (ResourceNotFoundException e) {
+            return ResponseEntity
+                    .status(HttpStatus.NOT_FOUND)
+                    .body(new ApiResponse(e.getMessage(), null));
+        } catch (Exception e) {
+            return ResponseEntity
+                    .status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ApiResponse("Có lỗi xảy ra", null));
         }
     }
 
