@@ -1602,13 +1602,19 @@ window.confirmCheckout = async function() {
             discountAmountToSend = (window.checkoutDiscountCash || 0) + (window.checkoutDepositAmount || 0);
         }
 
+        const cashierName = localStorage.getItem('userFullName') || localStorage.getItem('userName') || localStorage.getItem('userEmail') || 'Administrator';
+        const orderSnapshot = currentOrder ? { ...currentOrder } : null;
+        const tableSnapshot = currentTable ? { ...currentTable } : null;
+        const cartSnapshot = [...cartItems];
+
         // 1. Tạo Invoice cho Order này với thông tin giảm giá
         const invRes = await fetchWithAuth(`/invoices/add`, {
             method: 'POST',
             body: JSON.stringify({
                 orderId: currentOrder.id,
                 discountPercent: discountPercentToSend,
-                discountAmount: discountAmountToSend
+                discountAmount: discountAmountToSend,
+                cashierName: cashierName
             })
         });
         const invoiceId = invRes.data.id;
@@ -1653,7 +1659,7 @@ window.confirmCheckout = async function() {
             showConfirmButton: false
         });
         
-        printInvoice(inv);
+        printInvoice(inv, orderSnapshot, tableSnapshot, cartSnapshot);
         
     } catch(err) {
         Swal.fire({
@@ -1665,94 +1671,173 @@ window.confirmCheckout = async function() {
     }
 };
 
-function printInvoice(inv) {
-    let itemsHtml = (inv.items || inv.invoiceItems || []).map((it, i) => `
-        <tr>
-            <td>${i + 1}</td>
-            <td><strong>${escapeHtml(it.productName || (it.product ? it.product.name : 'Món'))}</strong></td>
-            <td style="text-align: right;">${(it.unitPrice || it.price || 0).toLocaleString()} ₫</td>
-            <td style="text-align: center;">${it.quantity || 1}</td>
-            <td style="text-align: right;"><strong>${(it.totalPrice || it.subtotal || 0).toLocaleString()} ₫</strong></td>
-        </tr>
-    `).join('');
+function printInvoice(inv, orderSnapshot, tableSnapshot, cartSnapshot) {
+    const rawItems = (inv.items && inv.items.length > 0) ? inv.items : (inv.invoiceItems || cartSnapshot || []);
+    let itemsHtml = rawItems.map((it, i) => {
+        const pName = it.productName || (it.product ? it.product.name : 'Món');
+        const price = it.unitPrice || it.price || 0;
+        const qty = it.quantity || 1;
+        const total = it.totalPrice || it.subtotal || (price * qty);
+        return `
+            <tr style="border-bottom: 1px dashed #ccc;">
+                <td style="padding: 6px 2px; text-align: left;">
+                    <strong>${i + 1}. ${escapeHtml(pName)}</strong>
+                    ${it.note ? `<br><small style="color:#d00; font-style:italic;">👉 ${escapeHtml(it.note)}</small>` : ''}
+                </td>
+                <td style="padding: 6px 2px; text-align: center; font-weight: bold;">${qty}</td>
+                <td style="padding: 6px 2px; text-align: right;">${price.toLocaleString()}</td>
+                <td style="padding: 6px 2px; text-align: right; font-weight: bold;">${total.toLocaleString()}</td>
+            </tr>
+        `;
+    }).join('');
+
+    const tblName = inv.tableName || (tableSnapshot?.tableName) || (orderSnapshot ? ('Bàn ' + (orderSnapshot.tableId || '')) : 'Bàn');
+    const orderCode = inv.orderCode || orderSnapshot?.orderCode || (inv.orderId ? ('ORD' + inv.orderId) : '-');
+    const invoiceCode = inv.invoiceCode || inv.id;
+    const customerName = inv.customerName || orderSnapshot?.customerName || 'Khách vãng lai';
+    const orderStaffName = inv.orderStaffName || orderSnapshot?.username || orderSnapshot?.userName || 'Nhân viên order';
+    const cashierName = inv.cashierName || localStorage.getItem('userFullName') || localStorage.getItem('userName') || localStorage.getItem('userEmail') || 'Administrator';
+    const payTimeStr = new Date(inv.paidAt || inv.issuedAt || inv.createdAt || Date.now()).toLocaleString('vi-VN');
+
+    let depositAmount = 0;
+    if (orderSnapshot && orderSnapshot.note && orderSnapshot.note.includes('Đã cọc:')) {
+        const match = orderSnapshot.note.match(/Đã cọc:\s*(\d+)/);
+        if (match && match[1]) {
+            depositAmount = parseInt(match[1]);
+        }
+    }
+
+    const subtotal = inv.subtotal || 0;
+    const discountAmount = inv.discountAmount || 0;
+    const discountPercent = inv.discountPercent || 0;
+    const finalTotal = inv.finalAmount || inv.totalAmount || (subtotal - discountAmount);
+
+    let discountLabel = 'Giảm giá';
+    if (discountPercent > 0) discountLabel += ` (${discountPercent}%)`;
+    discountLabel += ':';
 
     const html = `
+        <!DOCTYPE html>
         <html>
             <head>
-                <title>In Hóa Đơn #${inv.invoiceCode || inv.id}</title>
+                <meta charset="utf-8">
+                <title>Hóa Đơn #${invoiceCode} - ${tblName}</title>
                 <style>
-                    body { font-family: Arial, sans-serif; padding: 20px; color: #333; font-size: 14px; }
-                    .invoice-header { text-align: center; margin-bottom: 20px; }
-                    .invoice-info { margin-bottom: 20px; }
-                    .table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-                    .table th, .table td { border: 1px solid #ddd; padding: 8px; }
-                    .text-end { text-align: right; }
+                    @page { margin: 0; size: auto; }
+                    body {
+                        font-family: 'Courier New', Courier, monospace, sans-serif;
+                        padding: 15px;
+                        width: 320px;
+                        margin: 0 auto;
+                        color: #000;
+                        font-size: 13px;
+                        line-height: 1.35;
+                        background: #fff;
+                    }
                     .text-center { text-align: center; }
+                    .text-right { text-align: right; }
+                    .text-left { text-align: left; }
+                    .header { text-align: center; margin-bottom: 8px; }
+                    .brand-name { font-size: 18px; font-weight: 900; margin: 0; text-transform: uppercase; }
+                    .brand-sub { font-size: 11px; margin: 3px 0 6px 0; color: #222; }
+                    .title-box {
+                        border-top: 1px dashed #000;
+                        border-bottom: 1px dashed #000;
+                        padding: 6px 0;
+                        margin: 6px 0;
+                    }
+                    .bill-title { font-size: 17px; font-weight: 900; letter-spacing: 1px; margin: 0; }
+                    .bill-notice { font-size: 11px; font-style: italic; color: #333; margin: 2px 0 0 0; }
+                    .meta-info { margin: 8px 0; font-size: 12px; text-align: left; }
+                    .meta-info p { margin: 3px 0; }
+                    table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12px; }
+                    th { border-top: 1px solid #000; border-bottom: 1px solid #000; padding: 5px 2px; }
+                    td { padding: 4px 2px; }
+                    .total-box { margin-top: 8px; border-top: 1px dashed #000; padding-top: 6px; }
+                    .total-row { display: flex; justify-content: space-between; margin: 3px 0; font-size: 13px; }
+                    .grand-total { font-size: 16px; font-weight: 900; border-top: 1px solid #000; padding-top: 6px; margin-top: 6px; }
+                    .footer { text-align: center; margin-top: 12px; border-top: 1px dashed #000; padding-top: 8px; font-size: 11px; }
                 </style>
             </head>
             <body>
-                <div class="invoice-header">
-                    <h2>🍽️ NHÀ HÀNG THANH HÓA</h2>
-                    <p>HÓA ĐƠN THANH TOÁN</p>
-                    <hr>
+                <div class="header">
+                    <div class="brand-name">🍽️ NHÀ HÀNG THANH HÓA</div>
+                    <div class="brand-sub">Đ/c: TP. Thanh Hóa • Hotline: 0988.xxx.xxx</div>
+                    <div class="title-box">
+                        <div class="bill-title">HÓA ĐƠN THANH TOÁN</div>
+                        <div class="bill-notice">(Quý khách vui lòng kiểm tra lại hóa đơn)</div>
+                    </div>
                 </div>
-                <div class="invoice-info">
-                    <p><strong>Mã Hóa đơn:</strong> #${inv.invoiceCode || inv.id}</p>
-                    <p><strong>Bàn:</strong> ${inv.tableName || ('Bàn ' + (inv.tableId || '-'))}</p>
-                    <p><strong>Khách hàng:</strong> ${inv.customerName || 'Khách vãng lai'}</p>
-                    <p><strong>Thời gian:</strong> ${new Date(inv.issuedAt || inv.paidAt || inv.createdAt || Date.now()).toLocaleString('vi-VN')}</p>
-                    <p><strong>Phương thức TT:</strong> ${inv.paymentMethod || 'Tiền mặt'}</p>
+
+                <div class="meta-info">
+                    <p><strong>Bàn:</strong> <span style="font-size: 15px; font-weight: 900;">${tblName}</span></p>
+                    <p><strong>Mã Hóa đơn:</strong> #${invoiceCode}</p>
+                    <p><strong>Mã Order:</strong> #${orderCode}</p>
+                    <p><strong>Khách hàng:</strong> ${customerName}</p>
+                    <p><strong>Nhân viên order:</strong> ${orderStaffName}</p>
+                    <p><strong>Thu ngân:</strong> ${cashierName}</p>
+                    <p><strong>Giờ thanh toán:</strong> ${payTimeStr}</p>
                 </div>
-                <table class="table">
+
+                <table>
                     <thead>
                         <tr>
-                            <th>#</th>
-                            <th>Món ăn</th>
-                            <th class="text-end">Đơn giá</th>
-                            <th class="text-center">SL</th>
-                            <th class="text-end">Thành tiền</th>
+                            <th class="text-left">Tên món</th>
+                            <th class="text-center" style="width: 28px;">SL</th>
+                            <th class="text-right" style="width: 65px;">Đơn giá</th>
+                            <th class="text-right" style="width: 70px;">T.Tiền</th>
                         </tr>
                     </thead>
                     <tbody>
                         ${itemsHtml}
                     </tbody>
-                    <tfoot>
-                        <tr>
-                            <td colspan="4" class="text-end"><strong>TỔNG TIỀN MÓN (GỐC):</strong></td>
-                            <td class="text-end"><strong>${(inv.subtotal || 0).toLocaleString()} ₫</strong></td>
-                        </tr>
-                        ${inv.discountPercent && inv.discountPercent > 0 ? `
-                        <tr>
-                            <td colspan="4" class="text-end" style="color:#d10024;"><strong>GIẢM GIÁ (${inv.discountPercent}%):</strong></td>
-                            <td class="text-end" style="color:#d10024;"><strong>- ${Math.round((inv.subtotal || 0) * inv.discountPercent / 100).toLocaleString()} ₫</strong></td>
-                        </tr>` : ''}
-                        ${inv.discountAmount && inv.discountAmount > 0 ? `
-                        <tr>
-                            <td colspan="4" class="text-end" style="color:#16a34a;"><strong>GIẢM GIÁ / ĐÃ CỌC:</strong></td>
-                            <td class="text-end" style="color:#16a34a;"><strong>- ${(inv.discountAmount).toLocaleString()} ₫</strong></td>
-                        </tr>` : ''}
-                        <tr style="border-top: 2px solid #000;">
-                            <td colspan="4" class="text-end" style="font-size: 15px;"><strong>THỰC THU:</strong></td>
-                            <td class="text-end" style="color: #D10024; font-size: 16px;"><strong>${(inv.finalAmount || inv.totalAmount || 0).toLocaleString()} ₫</strong></td>
-                        </tr>
-                    </tfoot>
                 </table>
-                <br><br>
-                <div class="text-center">
-                    <p>Cảm ơn quý khách và hẹn gặp lại!</p>
+
+                <div class="total-box">
+                    <div class="total-row">
+                        <span>Tổng tiền món:</span>
+                        <span>${subtotal.toLocaleString()} ₫</span>
+                    </div>
+                    ${discountAmount > 0 ? `
+                    <div class="total-row">
+                        <span>${discountLabel}</span>
+                        <span>- ${discountAmount.toLocaleString()} ₫</span>
+                    </div>` : ''}
+                    ${depositAmount > 0 ? `
+                    <div class="total-row">
+                        <span>Đã cọc trước:</span>
+                        <span>- ${depositAmount.toLocaleString()} ₫</span>
+                    </div>` : ''}
+                    <div class="total-row grand-total">
+                        <span>THỰC THU:</span>
+                        <span>${finalTotal.toLocaleString()} ₫</span>
+                    </div>
+                </div>
+
+                <div class="footer">
+                    <p style="margin: 3px 0; font-weight: bold; font-size: 12px;">*** ĐÃ THANH TOÁN ***</p>
+                    <p style="margin: 2px 0;">Phương thức TT: <strong>${inv.paymentMethod || 'Tiền mặt'}</strong></p>
+                    <p style="margin: 3px 0;">Xin Quý khách kiểm tra kỹ danh sách món ăn & số tiền.</p>
+                    <p style="margin: 2px 0; font-weight: bold;">Cảm ơn Quý khách & Hẹn gặp lại!</p>
                 </div>
             </body>
         </html>
     `;
-    const printWindow = window.open('', '', 'height=650,width=800');
-    printWindow.document.write(html);
-    printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => {
-        printWindow.print();
-        printWindow.close();
+
+    const printWindow = window.open('', '', 'height=680,width=420');
+    if (printWindow) {
+        printWindow.document.write(html);
+        printWindow.document.close();
+        printWindow.focus();
+        setTimeout(() => {
+            printWindow.print();
+            printWindow.close();
+            window.location.href = "/pos-tables.html";
+        }, 500);
+    } else {
+        alert("Vui lòng cho phép popup để in hóa đơn thanh toán!");
         window.location.href = "/pos-tables.html";
-    }, 500);
+    }
 }
 
 /* IN PHIẾU TẠM TÍNH (CHO THU NGÂN KHI KHÁCH MUỐN XEM LẠI TIỀN TRƯỚC KHI THANH TOÁN) */
@@ -1792,7 +1877,8 @@ window.printTemporaryBill = function(e) {
     }
 
     const tblName = currentTable?.tableName || ('Bàn ' + (currentOrder.tableId || ''));
-    const cashierName = localStorage.getItem('userFullName') || localStorage.getItem('userName') || localStorage.getItem('userEmail') || currentOrder.username || 'Thu ngân';
+    const cashierName = localStorage.getItem('userFullName') || localStorage.getItem('userName') || localStorage.getItem('userEmail') || currentOrder.username || 'Administrator';
+    const orderStaffName = currentOrder.username || currentOrder.userName || 'Nhân viên order';
     const orderCode = currentOrder.orderCode || currentOrder.id;
     const customerName = currentOrder.customerName || 'Khách vãng lai';
 
@@ -1896,6 +1982,7 @@ window.printTemporaryBill = function(e) {
                     <p><strong>Bàn:</strong> <span style="font-size: 15px; font-weight: 900;">${tblName}</span></p>
                     <p><strong>Mã Order:</strong> #${orderCode}</p>
                     <p><strong>Khách hàng:</strong> ${customerName}</p>
+                    <p><strong>Nhân viên order:</strong> ${orderStaffName}</p>
                     <p><strong>Thu ngân:</strong> ${cashierName}</p>
                     <p><strong>Giờ in tạm tính:</strong> ${printTimeStr}</p>
                 </div>

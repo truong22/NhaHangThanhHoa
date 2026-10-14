@@ -334,6 +334,11 @@ public class InvoiceService
                 generateInvoiceCode()
         );
 
+        String cashier = request.getCashierName();
+        if (cashier == null || cashier.trim().isEmpty()) {
+            cashier = "Administrator";
+        }
+        invoice.setCashierName(cashier);
 
         invoice.setOrder(
                 order
@@ -817,6 +822,14 @@ public class InvoiceService
                     order.getOrderCode()
             );
 
+            if (order.getUser() != null) {
+                String staffName = order.getUser().getFullName();
+                if (staffName == null || staffName.trim().isEmpty()) {
+                    staffName = order.getUser().getUsername();
+                }
+                dto.setOrderStaffName(staffName);
+            }
+
 
             // =============================================
             // ORDER ITEMS
@@ -937,6 +950,9 @@ public class InvoiceService
             dto.setPaidAt(null);
         }
 
+        dto.setCashierName(
+                invoice.getCashierName() != null ? invoice.getCashierName() : "Administrator"
+        );
 
         return dto;
     }

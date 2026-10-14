@@ -18,6 +18,10 @@ public class InvoiceDto {
     // Order
     private Long orderId;
     private String orderCode;
+    private String orderStaffName;
+
+    // Staff / Cashier
+    private String cashierName;
 
     // Customer
     private Long customerId;

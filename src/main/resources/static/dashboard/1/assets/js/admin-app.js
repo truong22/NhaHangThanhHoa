@@ -2280,6 +2280,20 @@ async function viewOrderDetails(id) {
             }).join('');
         }
 
+        window.currentViewingOrder = order;
+        window.currentViewingOrderItems = items;
+
+        const printBtn = document.getElementById('printOrderReceiptBtn');
+        if (printBtn) {
+            if (order.status === 'COMPLETED') {
+                printBtn.innerHTML = '<i class="mdi mdi-printer me-1"></i> In lại hóa đơn';
+                printBtn.className = 'btn btn-primary';
+            } else {
+                printBtn.innerHTML = '<i class="mdi mdi-printer me-1"></i> In phiếu tạm tính';
+                printBtn.className = 'btn btn-outline-primary';
+            }
+        }
+
         $('#orderDetailsModal').modal('show');
     } catch (err) {
         showAlert("Không thể tải chi tiết đơn hàng: " + err.message, "error");
@@ -2405,16 +2419,20 @@ async function viewInvoiceDetails(id) {
         document.getElementById('modalInvoiceOrderCode').textContent = inv.orderCode || inv.orderId || '-';
         document.getElementById('modalInvoiceCustomer').textContent = inv.customerName ? `${inv.customerName} (${inv.customerPhone || ''})` : 'Khách lẻ / Trực tiếp';
         
-        // Lấy tên nhân viên từ order nếu có
-        let staffName = 'Nhân viên';
-        if (inv.orderId) {
+        // Lấy tên nhân viên order
+        let orderStaff = inv.orderStaffName;
+        if (!orderStaff && inv.orderId) {
             const matchedOrder = allOrdersData.find(o => o.id === inv.orderId);
             if (matchedOrder && matchedOrder.username) {
-                staffName = matchedOrder.username;
+                orderStaff = matchedOrder.username;
             }
         }
         const staffEl = document.getElementById('modalInvoiceStaff');
-        if (staffEl) staffEl.textContent = staffName;
+        if (staffEl) staffEl.textContent = orderStaff || 'Nhân viên order';
+
+        // Lấy tên thu ngân
+        const cashierEl = document.getElementById('modalInvoiceCashier');
+        if (cashierEl) cashierEl.textContent = inv.cashierName || localStorage.getItem('userFullName') || localStorage.getItem('userName') || 'Administrator';
 
         document.getElementById('modalInvoiceTable').textContent = inv.tableName || ('Bàn ' + (inv.tableId || '-'));
         document.getElementById('modalInvoiceDate').textContent = formatDate(inv.issuedAt || inv.paidAt);
@@ -2457,44 +2475,297 @@ async function viewInvoiceDetails(id) {
     }
 }
 
-function printInvoiceWindow(inv) {
-    const printContent = document.getElementById('invoicePrintArea').innerHTML;
-    const printWindow = window.open('', '', 'height=650,width=800');
-    printWindow.document.write(`
+// =============================================================
+// THERMAL RECEIPT PRINTER (PHIẾU IN NHIỆT CHUẨN POS 80MM)
+// =============================================================
+function generateThermalReceiptHtml(data) {
+    const isPaid = data.status === 'PAID' || data.isPaid === true;
+    const isReprint = data.isReprint === true || data.title === 'HÓA ĐƠN IN LẠI';
+    const title = data.title || (isReprint ? 'HÓA ĐƠN IN LẠI' : (isPaid ? 'HÓA ĐƠN THANH TOÁN' : 'PHIẾU TẠM TÍNH'));
+    const notice = data.notice || (isReprint ? '(Bản in lại)' : (isPaid ? '(Quý khách vui lòng kiểm tra lại hóa đơn)' : '(Quý khách vui lòng kiểm tra món trước khi thanh toán)'));
+    const statusText = data.statusText || (isReprint ? '*** HÓA ĐƠN IN LẠI (ĐÃ THANH TOÁN) ***' : (isPaid ? '*** ĐÃ THANH TOÁN ***' : '*** CHƯA THANH TOÁN ***'));
+    const timeLabel = data.timeLabel || (isReprint ? 'Giờ in lại' : (isPaid ? 'Giờ thanh toán' : 'Giờ in tạm tính'));
+    const timeValue = data.timeValue || new Date().toLocaleString('vi-VN');
+
+    let itemsHtml = (data.items || []).map((it, i) => {
+        const pName = it.productName || (it.product ? it.product.name : 'Món');
+        const price = it.unitPrice || it.price || 0;
+        const qty = it.quantity || 1;
+        const total = it.totalPrice || it.subtotal || (price * qty);
+        return `
+            <tr style="border-bottom: 1px dashed #ccc;">
+                <td style="padding: 6px 2px; text-align: left;">
+                    <strong>${i + 1}. ${escapeHtml(pName)}</strong>
+                    ${it.note ? `<br><small style="color:#d00; font-style:italic;">👉 ${escapeHtml(it.note)}</small>` : ''}
+                </td>
+                <td style="padding: 6px 2px; text-align: center; font-weight: bold;">${qty}</td>
+                <td style="padding: 6px 2px; text-align: right;">${Number(price).toLocaleString('vi-VN')}</td>
+                <td style="padding: 6px 2px; text-align: right; font-weight: bold;">${Number(total).toLocaleString('vi-VN')}</td>
+            </tr>
+        `;
+    }).join('');
+
+    if (!itemsHtml) {
+        itemsHtml = `<tr><td colspan="4" style="text-align:center; padding:10px; color:#888;">(Không có món ăn)</td></tr>`;
+    }
+
+    const subtotal = Number(data.subtotal) || 0;
+    const discountAmount = Number(data.discountAmount) || 0;
+    const discountPercent = Number(data.discountPercent) || 0;
+    const depositAmount = Number(data.depositAmount) || 0;
+    const totalAmount = Number(data.totalAmount) || (subtotal - discountAmount - depositAmount);
+
+    let discountLabel = 'Giảm giá';
+    if (discountPercent > 0) discountLabel += ` (${discountPercent}%)`;
+    discountLabel += ':';
+
+    return `
+        <!DOCTYPE html>
         <html>
             <head>
-                <title>In Hóa Đơn #${inv.invoiceCode || inv.id}</title>
-                <link rel="stylesheet" href="assets/vendors/css/vendor.bundle.base.css">
+                <meta charset="utf-8">
+                <title>${escapeHtml(title)} - ${escapeHtml(data.tableName || '')}</title>
                 <style>
-                    body { font-family: Arial, sans-serif; padding: 20px; color: #333; }
-                    .invoice-header { text-align: center; margin-bottom: 20px; }
-                    .table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-                    .table th, .table td { border: 1px solid #ddd; padding: 8px; }
-                    .text-end { text-align: right; }
+                    @page { margin: 0; size: auto; }
+                    body {
+                        font-family: 'Courier New', Courier, monospace, sans-serif;
+                        padding: 15px;
+                        width: 320px;
+                        margin: 0 auto;
+                        color: #000;
+                        font-size: 13px;
+                        line-height: 1.35;
+                        background: #fff;
+                    }
                     .text-center { text-align: center; }
+                    .text-right { text-align: right; }
+                    .text-left { text-align: left; }
+                    .header { text-align: center; margin-bottom: 8px; }
+                    .brand-name { font-size: 18px; font-weight: 900; margin: 0; text-transform: uppercase; }
+                    .brand-sub { font-size: 11px; margin: 3px 0 6px 0; color: #222; }
+                    .title-box {
+                        border-top: 1px dashed #000;
+                        border-bottom: 1px dashed #000;
+                        padding: 6px 0;
+                        margin: 6px 0;
+                    }
+                    .bill-title { font-size: 17px; font-weight: 900; letter-spacing: 1px; margin: 0; }
+                    .bill-notice { font-size: 11px; font-style: italic; color: #333; margin: 2px 0 0 0; }
+                    .meta-info { margin: 8px 0; font-size: 12px; text-align: left; }
+                    .meta-info p { margin: 3px 0; }
+                    table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12px; }
+                    th { border-top: 1px solid #000; border-bottom: 1px solid #000; padding: 5px 2px; }
+                    td { padding: 4px 2px; }
+                    .total-box { margin-top: 8px; border-top: 1px dashed #000; padding-top: 6px; }
+                    .total-row { display: flex; justify-content: space-between; margin: 3px 0; font-size: 13px; }
+                    .grand-total { font-size: 16px; font-weight: 900; border-top: 1px solid #000; padding-top: 6px; margin-top: 6px; }
+                    .footer { text-align: center; margin-top: 12px; border-top: 1px dashed #000; padding-top: 8px; font-size: 11px; }
                 </style>
             </head>
             <body>
-                <div class="invoice-header">
-                    <h2>🍽️ NHÀ HÀNG THANH HÓA</h2>
-                    <p>HÓA ĐƠN THANH TOÁN KHÁCH HÀNG</p>
-                    <hr>
+                <div class="header">
+                    <div class="brand-name">🍽️ NHÀ HÀNG THANH HÓA</div>
+                    <div class="brand-sub">Đ/c: TP. Thanh Hóa • Hotline: 0988.xxx.xxx</div>
+                    <div class="title-box">
+                        <div class="bill-title">${escapeHtml(title)}</div>
+                        <div class="bill-notice">${escapeHtml(notice)}</div>
+                    </div>
                 </div>
-                ${printContent}
-                <br><br>
-                <div class="text-center">
-                    <p>Cảm ơn quý khách và hẹn gặp lại!</p>
+
+                <div class="meta-info">
+                    <p><strong>Bàn:</strong> <span style="font-size: 14px; font-weight: 900;">${escapeHtml(data.tableName || '-')}</span></p>
+                    <p><strong>Mã Order:</strong> #${escapeHtml(data.orderCode || '-')}</p>
+                    ${data.invoiceCode ? `<p><strong>Mã Hóa đơn:</strong> #${escapeHtml(data.invoiceCode)}</p>` : ''}
+                    <p><strong>Khách hàng:</strong> ${escapeHtml(data.customerName || 'Khách vãng lai')}</p>
+                    <p><strong>Nhân viên order:</strong> ${escapeHtml(data.orderStaffName || 'Nhân viên order')}</p>
+                    <p><strong>Thu ngân:</strong> ${escapeHtml(data.cashierName || 'Administrator')}</p>
+                    <p><strong>${escapeHtml(timeLabel)}:</strong> ${escapeHtml(timeValue)}</p>
+                </div>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th class="text-left">Tên món</th>
+                            <th class="text-center" style="width: 28px;">SL</th>
+                            <th class="text-right" style="width: 65px;">Đơn giá</th>
+                            <th class="text-right" style="width: 70px;">T.Tiền</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${itemsHtml}
+                    </tbody>
+                </table>
+
+                <div class="total-box">
+                    <div class="total-row">
+                        <span>Tổng tiền món:</span>
+                        <span>${subtotal.toLocaleString('vi-VN')} ₫</span>
+                    </div>
+                    ${discountAmount > 0 ? `
+                    <div class="total-row">
+                        <span>${escapeHtml(discountLabel)}</span>
+                        <span>- ${discountAmount.toLocaleString('vi-VN')} ₫</span>
+                    </div>` : ''}
+                    ${depositAmount > 0 ? `
+                    <div class="total-row">
+                        <span>Đã cọc trước:</span>
+                        <span>- ${depositAmount.toLocaleString('vi-VN')} ₫</span>
+                    </div>` : ''}
+                    <div class="total-row grand-total">
+                        <span>${isPaid ? 'THỰC THU:' : 'TỔNG TẠM TÍNH:'}</span>
+                        <span>${totalAmount.toLocaleString('vi-VN')} ₫</span>
+                    </div>
+                </div>
+
+                <div class="footer">
+                    <p style="margin: 3px 0; font-weight: bold; font-size: 12px;">${statusText}</p>
+                    ${data.paymentMethod ? `<p style="margin: 2px 0;">Phương thức TT: <strong>${escapeHtml(data.paymentMethod)}</strong></p>` : ''}
+                    <p style="margin: 3px 0;">Xin Quý khách kiểm tra kỹ danh sách món ăn & số tiền.</p>
+                    <p style="margin: 2px 0; font-weight: bold;">Cảm ơn Quý khách & Hẹn gặp lại!</p>
                 </div>
             </body>
         </html>
-    `);
+    `;
+}
+
+function printThermalReceiptWindow(html) {
+    const printWindow = window.open('', '', 'height=680,width=420');
+    if (!printWindow) {
+        alert("Vui lòng cho phép popup trình duyệt để in hóa đơn!");
+        return;
+    }
+    printWindow.document.write(html);
     printWindow.document.close();
     printWindow.focus();
     setTimeout(() => {
         printWindow.print();
         printWindow.close();
-    }, 500);
+    }, 450);
 }
+
+async function printInvoiceWindow(inv) {
+    let items = inv.items || inv.invoiceItems || [];
+    if ((!items || items.length === 0) && inv.orderId) {
+        try {
+            const itemRes = await fetchWithAuth(`/api/v1/order-items/order/${inv.orderId}`);
+            items = itemRes.data || [];
+        } catch(e) {}
+    }
+
+    let matchedOrder = (allOrdersData || []).find(o => o.id === inv.orderId || o.orderCode === inv.orderCode);
+    if (!matchedOrder && inv.orderId) {
+        try {
+            const ordRes = await fetchWithAuth(`/api/v1/orders/${inv.orderId}`);
+            if (ordRes && ordRes.data) matchedOrder = ordRes.data;
+        } catch(e) {}
+    }
+
+    const orderStaffName = inv.orderStaffName || (matchedOrder ? (matchedOrder.username || matchedOrder.userName) : '') || 'Nhân viên phục vụ';
+    const currentAdminName = localStorage.getItem('userFullName') || localStorage.getItem('userName') || localStorage.getItem('userEmail') || 'Administrator';
+    const cashierName = inv.cashierName || currentAdminName;
+    const tableName = inv.tableName || (matchedOrder ? matchedOrder.tableName : '') || ('Bàn #' + (inv.tableId || '-'));
+    const customerName = inv.customerName || (matchedOrder ? matchedOrder.customerName : '') || 'Khách vãng lai';
+    const orderCode = inv.orderCode || (matchedOrder ? matchedOrder.orderCode : '') || ('ORD' + (inv.orderId || ''));
+    const isPaid = inv.status === 'PAID';
+
+    const html = generateThermalReceiptHtml({
+        title: isPaid ? 'HÓA ĐƠN IN LẠI' : 'PHIẾU TẠM TÍNH',
+        notice: isPaid ? '(Bản in lại)' : '(Quý khách vui lòng kiểm tra món trước khi thanh toán)',
+        tableName: tableName,
+        orderCode: orderCode,
+        invoiceCode: inv.invoiceCode || inv.id,
+        customerName: customerName,
+        orderStaffName: orderStaffName,
+        cashierName: cashierName,
+        timeLabel: isPaid ? 'Giờ in lại' : 'Giờ xuất phiếu',
+        timeValue: formatDate(inv.paidAt || inv.issuedAt || inv.createdAt || new Date()),
+        items: items,
+        subtotal: inv.subtotal || inv.totalAmount || 0,
+        discountPercent: inv.discountPercent || 0,
+        discountAmount: inv.discountAmount || 0,
+        totalAmount: inv.totalAmount || inv.finalAmount || 0,
+        status: inv.status,
+        statusText: isPaid ? '*** HÓA ĐƠN IN LẠI (ĐÃ THANH TOÁN) ***' : '*** CHƯA THANH TOÁN ***',
+        isReprint: isPaid,
+        paymentMethod: inv.paymentMethod || (isPaid ? 'Tiền mặt' : '')
+    });
+
+    printThermalReceiptWindow(html);
+}
+
+window.quickPrintInvoiceAdmin = async function(invId) {
+    try {
+        const res = await fetchWithAuth(`/api/v1/invoices/${invId}`);
+        if (res && res.data) {
+            printInvoiceWindow(res.data);
+        }
+    } catch (e) {
+        showAlert("Không thể in hóa đơn: " + e.message, "error");
+    }
+};
+
+window.printCurrentOrderReceiptAdmin = async function() {
+    if (!window.currentViewingOrder) {
+        showAlert("Không tìm thấy thông tin đơn hàng đang xem!", "error");
+        return;
+    }
+    const order = window.currentViewingOrder;
+    const items = window.currentViewingOrderItems || [];
+
+    // Tìm hóa đơn liên kết nếu có
+    let matchedInv = (allInvoicesData || []).find(inv => inv.orderId === order.id || inv.orderCode === order.orderCode);
+    if (!matchedInv) {
+        try {
+            const invRes = await fetchWithAuth(`/api/v1/invoices/all`);
+            if (invRes && invRes.data) {
+                matchedInv = invRes.data.find(inv => inv.orderId === order.id || inv.orderCode === order.orderCode);
+            }
+        } catch(e) {}
+    }
+
+    if (matchedInv) {
+        printInvoiceWindow(matchedInv);
+    } else {
+        const cashierName = localStorage.getItem('userFullName') || localStorage.getItem('userName') || localStorage.getItem('userEmail') || 'Administrator';
+        const orderStaffName = order.username || order.userName || 'Nhân viên order';
+        const tableName = order.tableName || ('Bàn ' + (order.tableId || '-'));
+        const customerName = order.customerName || 'Khách vãng lai';
+
+        let depositAmount = 0;
+        if (order.note && order.note.includes('Đã cọc:')) {
+            const match = order.note.match(/Đã cọc:\s*(\d+)/);
+            if (match && match[1]) {
+                depositAmount = parseInt(match[1]);
+            }
+        }
+
+        const isCompleted = order.status === 'COMPLETED';
+
+        const html = generateThermalReceiptHtml({
+            title: isCompleted ? 'HÓA ĐƠN IN LẠI' : 'PHIẾU TẠM TÍNH',
+            notice: isCompleted ? '(Bản in lại)' : '(Quý khách vui lòng kiểm tra món trước khi thanh toán)',
+            tableName: tableName,
+            orderCode: order.orderCode || order.id,
+            invoiceCode: null,
+            customerName: customerName,
+            orderStaffName: orderStaffName,
+            cashierName: cashierName,
+            timeLabel: isCompleted ? 'Giờ in lại' : 'Giờ in tạm tính',
+            timeValue: new Date().toLocaleString('vi-VN'),
+            items: items,
+            subtotal: order.subtotal || 0,
+            discountAmount: 0,
+            depositAmount: depositAmount,
+            totalAmount: (order.subtotal || 0) - depositAmount,
+            status: isCompleted ? 'PAID' : 'PENDING',
+            statusText: isCompleted ? '*** HÓA ĐƠN IN LẠI (ĐÃ THANH TOÁN) ***' : '*** CHƯA THANH TOÁN ***',
+            isReprint: isCompleted,
+            paymentMethod: isCompleted ? 'Tiền mặt' : ''
+        });
+
+        printThermalReceiptWindow(html);
+    }
+};
 
 async function updateInvoiceStatus(id, newStatus) {
     try {
@@ -2547,64 +2818,186 @@ async function loadReports() {
     handleFetchReport();
 }
 
-function printReport() {
-    const from = document.getElementById('reportFromDate').value;
-    const to = document.getElementById('reportToDate').value;
-    
-    // Copy content of reports tab
-    const printContent = document.getElementById('tab-reports').cloneNode(true);
-    
-    // Remove the filter row from the print out
-    const filterRow = printContent.querySelector('.card-body .row');
-    if(filterRow) filterRow.parentElement.parentElement.remove(); // Removes the filter card
-    
-    const printWindow = window.open('', '', 'height=800,width=1000');
-    printWindow.document.write(`
+function generateThermalRevenueReportHtml(data) {
+    const adminName = localStorage.getItem('userFullName') || localStorage.getItem('userName') || localStorage.getItem('userEmail') || 'Administrator';
+    const printTime = new Date().toLocaleString('vi-VN');
+    const fromStr = data.from || '';
+    const toStr = data.to || '';
+    const totalRev = Number(data.totalRevenue) || 0;
+    const totalInv = Number(data.totalInvoices) || 0;
+    const avgInv = totalInv > 0 ? Math.round(totalRev / totalInv) : 0;
+    const totalItems = Number(data.totalItemsSold) || 0;
+
+    // Methods
+    const methods = data.methods || [];
+    let methodsHtml = methods.map(m => `
+        <div class="row-item">
+            <span>• ${escapeHtml(m.method)} (${m.count} đơn):</span>
+            <span style="font-weight: bold;">${Number(m.revenue).toLocaleString('vi-VN')} ₫</span>
+        </div>
+    `).join('');
+    if (!methodsHtml) methodsHtml = `<div style="font-size:11px; color:#666;">(Chưa có dữ liệu)</div>`;
+
+    // Staffs
+    const staffs = data.staffs || [];
+    let staffsHtml = staffs.map(s => `
+        <div class="row-item">
+            <span>• ${escapeHtml(s.staff)} (${s.count} đơn):</span>
+            <span style="font-weight: bold;">${Number(s.revenue).toLocaleString('vi-VN')} ₫</span>
+        </div>
+    `).join('');
+    if (!staffsHtml) staffsHtml = `<div style="font-size:11px; color:#666;">(Chưa có dữ liệu)</div>`;
+
+    // Top items
+    const items = (data.items || []).slice(0, 15);
+    let itemsHtml = items.map((it, idx) => `
+        <tr style="border-bottom: 1px dashed #ccc;">
+            <td style="padding: 5px 2px; text-align: left;">
+                <strong>${idx + 1}. ${escapeHtml(it.name)}</strong>
+            </td>
+            <td style="padding: 5px 2px; text-align: center; font-weight: bold;">${it.quantity}</td>
+            <td style="padding: 5px 2px; text-align: right; font-weight: bold;">${Number(it.revenue).toLocaleString('vi-VN')}</td>
+        </tr>
+    `).join('');
+    if (!itemsHtml) {
+        itemsHtml = `<tr><td colspan="3" style="text-align:center; padding:8px; color:#888;">(Chưa có dữ liệu món)</td></tr>`;
+    }
+
+    return `
+        <!DOCTYPE html>
         <html>
             <head>
-                <title>In Báo Cáo Thống Kê</title>
-                <link rel="stylesheet" href="assets/vendors/css/vendor.bundle.base.css">
+                <meta charset="utf-8">
+                <title>Báo Cáo Doanh Thu</title>
                 <style>
-                    body { font-family: Arial, sans-serif; padding: 20px; color: #333; }
-                    .report-header { text-align: center; margin-bottom: 20px; }
-                    .table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-                    .table th, .table td { border: 1px solid #ddd; padding: 8px; }
-                    .text-end { text-align: right; }
-                    .text-center { text-align: center; }
-                    .card { margin-bottom: 20px; border: 1px solid #ddd; padding: 15px; }
-                    .row { display: flex; flex-wrap: wrap; margin-right: -15px; margin-left: -15px; }
-                    .col-md, .col-md-6 { padding-right: 15px; padding-left: 15px; }
-                    .col-md-6 { width: 50%; float: left; box-sizing: border-box; }
-                    .col-md { flex-grow: 1; min-width: 150px; text-align: center; }
-                    .table-responsive { overflow: visible !important; max-height: none !important; }
-                    @media print {
-                        .col-md-6 { width: 50%; float: left; }
-                        .table-responsive { max-height: none !important; }
-                        .card { break-inside: avoid; }
+                    @page { margin: 0; size: auto; }
+                    body {
+                        font-family: 'Courier New', Courier, monospace, sans-serif;
+                        padding: 15px;
+                        width: 320px;
+                        margin: 0 auto;
+                        color: #000;
+                        font-size: 13px;
+                        line-height: 1.35;
+                        background: #fff;
                     }
+                    .text-center { text-align: center; }
+                    .text-right { text-align: right; }
+                    .text-left { text-align: left; }
+                    .header { text-align: center; margin-bottom: 8px; }
+                    .brand-name { font-size: 18px; font-weight: 900; margin: 0; text-transform: uppercase; }
+                    .brand-sub { font-size: 11px; margin: 3px 0 6px 0; color: #222; }
+                    .title-box {
+                        border-top: 1px dashed #000;
+                        border-bottom: 1px dashed #000;
+                        padding: 6px 0;
+                        margin: 6px 0;
+                    }
+                    .bill-title { font-size: 16px; font-weight: 900; letter-spacing: 0.5px; margin: 0; }
+                    .bill-notice { font-size: 11px; color: #333; margin: 2px 0 0 0; }
+                    .meta-info { margin: 8px 0; font-size: 12px; text-align: left; }
+                    .meta-info p { margin: 3px 0; }
+                    .section-title {
+                        font-size: 12px;
+                        font-weight: 900;
+                        border-top: 1px dashed #000;
+                        padding-top: 5px;
+                        margin: 8px 0 4px 0;
+                    }
+                    .row-item {
+                        display: flex;
+                        justify-content: space-between;
+                        margin: 3px 0;
+                        font-size: 12px;
+                    }
+                    table { width: 100%; border-collapse: collapse; margin-top: 4px; font-size: 12px; }
+                    th { border-top: 1px solid #000; border-bottom: 1px solid #000; padding: 4px 2px; }
+                    td { padding: 4px 2px; }
+                    .total-box { margin-top: 6px; border-top: 1px dashed #000; padding-top: 6px; }
+                    .total-row { display: flex; justify-content: space-between; margin: 3px 0; font-size: 13px; }
+                    .grand-total { font-size: 16px; font-weight: 900; border-top: 1px solid #000; padding-top: 6px; margin-top: 6px; }
+                    .footer { text-align: center; margin-top: 12px; border-top: 1px dashed #000; padding-top: 8px; font-size: 11px; }
                 </style>
             </head>
             <body>
-                <div class="report-header">
-                    <h2>🍽️ BÁO CÁO THỐNG KÊ DOANH THU</h2>
-                    <p>Thời gian: Từ <strong>${from}</strong> đến <strong>${to}</strong></p>
-                    <hr>
+                <div class="header">
+                    <div class="brand-name">🍽️ NHÀ HÀNG THANH HÓA</div>
+                    <div class="brand-sub">Đ/c: TP. Thanh Hóa • Hotline: 0988.xxx.xxx</div>
+                    <div class="title-box">
+                        <div class="bill-title">BÁO CÁO DOANH THU</div>
+                        <div class="bill-notice">Từ: ${escapeHtml(fromStr)} ➔ Đến: ${escapeHtml(toStr)}</div>
+                    </div>
                 </div>
-                ${printContent.innerHTML}
-                <br><br>
-                <div class="text-end">
-                    <p>Người in: <strong>Quản trị viên</strong></p>
-                    <p>Ngày in: <strong>${new Date().toLocaleDateString('vi-VN')}</strong></p>
+
+                <div class="meta-info">
+                    <p><strong>Người xuất:</strong> ${escapeHtml(adminName)}</p>
+                    <p><strong>Thời gian in:</strong> ${escapeHtml(printTime)}</p>
+                    <p><strong>Số HĐ đã thanh toán:</strong> ${totalInv} hóa đơn</p>
+                    <p><strong>Tổng số lượng món:</strong> ${totalItems} phần</p>
+                </div>
+
+                <div class="total-box">
+                    <div class="total-row grand-total">
+                        <span>TỔNG DOANH THU:</span>
+                        <span>${totalRev.toLocaleString('vi-VN')} ₫</span>
+                    </div>
+                    <div class="total-row">
+                        <span>TB / Hóa đơn:</span>
+                        <span>${avgInv.toLocaleString('vi-VN')} ₫</span>
+                    </div>
+                </div>
+
+                <div class="section-title">1. PHƯƠNG THỨC THANH TOÁN</div>
+                ${methodsHtml}
+
+                <div class="section-title">2. DOANH THU THEO NHÂN VIÊN</div>
+                ${staffsHtml}
+
+                <div class="section-title">3. TOP MÓN BÁN CHẠY</div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th class="text-left">Tên món</th>
+                            <th class="text-center" style="width: 32px;">SL</th>
+                            <th class="text-right" style="width: 75px;">T.Tiền</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${itemsHtml}
+                    </tbody>
+                </table>
+
+                <div class="footer">
+                    <p style="margin: 3px 0; font-weight: bold; font-size: 12px;">*** BÁO CÁO DOANH THU / KẾT CA ***</p>
+                    <p style="margin: 2px 0;">Phần mềm Quản lý Nhà hàng Thanh Hóa</p>
                 </div>
             </body>
         </html>
-    `);
-    printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => {
-        printWindow.print();
-        printWindow.close();
-    }, 500);
+    `;
+}
+
+async function printReport() {
+    const from = document.getElementById('reportFromDate').value;
+    const to = document.getElementById('reportToDate').value;
+    
+    if (!window.currentReportSummary || window.currentReportSummary.from !== from || window.currentReportSummary.to !== to) {
+        await handleFetchReport();
+    }
+
+    const summary = window.currentReportSummary || {};
+    const html = generateThermalRevenueReportHtml({
+        from: from,
+        to: to,
+        totalRevenue: summary.totalRevenue || 0,
+        totalInvoices: summary.totalInvoices || 0,
+        averageInvoice: summary.averageInvoice || 0,
+        totalItemsSold: summary.totalItemsSold || 0,
+        methods: window.currentReportMethods || [],
+        staffs: window.currentReportStaffs || [],
+        items: window.currentReportItems || []
+    });
+
+    printThermalReceiptWindow(html);
 }
 
 async function handleFetchReport(resetPage = false) {
@@ -2665,7 +3058,7 @@ async function handleFetchReport(resetPage = false) {
             revenueByDateMap[dateStr].revenue += invAmount;
             
             // Theo nhân viên order / thu ngân
-            const staffName = ordersMap[inv.orderId] || inv.username || 'Nhân viên';
+            const staffName = inv.orderStaffName || ordersMap[inv.orderId] || inv.cashierName || inv.username || 'Nhân viên';
             if(!revenueByStaffMap[staffName]) revenueByStaffMap[staffName] = { count: 0, revenue: 0 };
             revenueByStaffMap[staffName].count += 1;
             revenueByStaffMap[staffName].revenue += invAmount;
@@ -2731,7 +3124,16 @@ async function handleFetchReport(resetPage = false) {
         const sortedStaffs = Object.keys(revenueByStaffMap).sort((a,b) => revenueByStaffMap[b].revenue - revenueByStaffMap[a].revenue);
         const sortedMethods = Object.keys(revenueByPaymentMap);
 
-        // Store current reports data globally for pagination
+        // Store current reports data globally for pagination and printing
+        window.currentReportSummary = {
+            from,
+            to,
+            totalRevenue,
+            totalInvoices,
+            averageInvoice,
+            totalItemsSold,
+            bestSeller
+        };
         window.currentReportDates = sortedDates.map(d => ({ date: d, invoices: revenueByDateMap[d].invoices, revenue: revenueByDateMap[d].revenue }));
         window.currentReportStaffs = sortedStaffs.map(s => ({ staff: s, count: revenueByStaffMap[s].count, revenue: revenueByStaffMap[s].revenue }));
         window.currentReportMethods = sortedMethods.map(m => ({ method: m, count: revenueByPaymentMap[m].count, revenue: revenueByPaymentMap[m].revenue }));

@@ -14,5 +14,7 @@ public class InvoiceRequest {
     @DecimalMax(value = "100.0", message = "Phần trăm giảm giá không được lớn hơn 100")
     private BigDecimal discountPercent;
     @DecimalMin( value = "0.00", message = "Giảm giá không được nhỏ hơn 0" )
+    private BigDecimal discountAmount = BigDecimal.ZERO;
 
-    private BigDecimal discountAmount = BigDecimal.ZERO; }
+    private String cashierName;
+}

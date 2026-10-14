@@ -1166,6 +1166,9 @@
         </div>
       </div>
       <div class="modal-footer">
+        <button type="button" class="btn btn-primary" id="printOrderReceiptBtn" onclick="printCurrentOrderReceiptAdmin()">
+          <i class="mdi mdi-printer me-1"></i> In lại hóa đơn
+        </button>
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Đóng</button>
       </div>
     </div>
@@ -1186,9 +1189,10 @@
             <p class="mb-1"><strong>Mã Hóa đơn:</strong> #<span id="modalInvoiceCode">-</span></p>
             <p class="mb-1"><strong>Mã Đơn hàng:</strong> #<span id="modalInvoiceOrderCode">-</span></p>
             <p class="mb-1"><strong>Khách hàng:</strong> <span id="modalInvoiceCustomer">-</span></p>
-            <p class="mb-0"><strong>Nhân viên phụ trách:</strong> <span id="modalInvoiceStaff" class="text-primary font-weight-bold">-</span></p>
+            <p class="mb-0"><strong>Nhân viên order:</strong> <span id="modalInvoiceStaff" class="text-primary font-weight-bold">-</span></p>
           </div>
           <div class="col-md-6 mb-2">
+            <p class="mb-1"><strong>Thu ngân quản lý:</strong> <span id="modalInvoiceCashier" class="text-danger font-weight-bold">-</span></p>
             <p class="mb-1"><strong>Vị trí bàn:</strong> <span id="modalInvoiceTable">-</span></p>
             <p class="mb-1"><strong>Thời gian xuất:</strong> <span id="modalInvoiceDate">-</span></p>
             <p class="mb-1"><strong>Phương thức:</strong> <span id="modalInvoicePaymentMethod" class="badge bg-light text-dark border">-</span></p>
@@ -1235,7 +1239,7 @@
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-primary" id="printInvoiceBtn">
-          <i class="mdi mdi-printer me-1"></i> In Hóa Đơn
+          <i class="mdi mdi-printer me-1"></i> In lại hóa đơn
         </button>
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Đóng</button>
       </div>
