@@ -379,7 +379,7 @@
                           <i class="mdi mdi-receipt mdi-36px text-info"></i>
                         </div>
                         <h5 class="font-weight-bold mb-1" style="font-size: 1.05rem;">Hóa đơn & Thanh toán</h5>
-                        <p class="text-muted text-small mb-0">Xử lý thu tiền & giảm giá</p>
+                        <p class="text-muted text-small mb-0">Xử lý thu tiền & in hóa đơn</p>
                       </div>
                     </div>
                   </div>
@@ -764,84 +764,228 @@
             </h3>
           </div>
 
-          <!-- Date Filter Box -->
-          <div class="card mb-4">
+          <!-- Card: Danh Sách Ca Làm Việc Của Thu Ngân Theo Ngày -->
+          <div class="card mb-4 shadow-sm border-primary" id="todayCashierShiftsCard" style="border-left: 4px solid #1bcfb4 !important;">
+            <div class="card-body py-3">
+              <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                <div class="d-flex align-items-center flex-wrap gap-2">
+                  <h5 class="card-title mb-0 text-primary font-weight-bold">
+                    <i class="mdi mdi-account-clock text-info me-1"></i> Danh Sách Ca Làm Việc Của Thu Ngân (<span id="todayShiftsDateText"></span>)
+                  </h5>
+                  <div class="d-inline-flex align-items-center ms-md-2">
+                    <label for="shiftsFilterDate" class="me-1 mb-0 small text-muted font-weight-bold">Xem theo ngày:</label>
+                    <input type="date" id="shiftsFilterDate" class="form-control form-control-sm" style="width: 145px; height: 32px; font-weight: bold; background: #fff;" onchange="loadTodayCashierShifts(this.value)">
+                  </div>
+                </div>
+                <div class="btn-group btn-group-sm">
+                  <button type="button" class="btn btn-sm btn-outline-secondary" onclick="loadTodayCashierShifts(new Date().toISOString().split('T')[0])" title="Xem danh sách ca hôm nay">
+                    <i class="mdi mdi-calendar-today me-1"></i> Hôm nay
+                  </button>
+                  <button type="button" class="btn btn-sm btn-outline-primary" onclick="loadTodayCashierShifts()" title="Tải lại danh sách ca">
+                    <i class="mdi mdi-refresh me-1"></i> Làm mới
+                  </button>
+                </div>
+              </div>
+              <div class="table-responsive">
+                <table class="table table-hover table-sm align-middle mb-0">
+                  <thead class="table-light">
+                    <tr>
+                      <th>Ca / Thu ngân</th>
+                      <th>Giờ vào ca</th>
+                      <th>Giờ kết ca</th>
+                      <th class="text-center">Trạng thái</th>
+                      <th class="text-center">Số HĐ</th>
+                      <th class="text-end">Tiền mặt (Két)</th>
+                      <th class="text-end">Chuyển khoản</th>
+                      <th class="text-end">Tổng doanh thu ca</th>
+                      <th class="text-center">Thao tác</th>
+                    </tr>
+                  </thead>
+                  <tbody id="todayCashierShiftsBody">
+                    <tr><td colspan="9" class="text-center text-muted py-3">Đang tải danh sách ca thu ngân hôm nay...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- Shift & Revenue Filter Box -->
+          <div class="card mb-4 shadow-sm">
             <div class="card-body">
-              <h4 class="card-title mb-3">Lọc báo cáo theo khoảng thời gian</h4>
-              <div class="row align-items-end">
-                <div class="col-md-4 mb-2">
-                  <label for="reportFromDate" class="font-weight-bold">Từ ngày:</label>
-                  <input type="date" id="reportFromDate" class="form-control">
+              <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                <h4 class="card-title mb-0">
+                  <i class="mdi mdi-chart-box-outline text-primary me-2"></i>Báo Cáo Doanh Thu Nhà Hàng & Bàn Giao Ca
+                </h4>
+              </div>
+
+              <!-- Quick Date/Shift Presets -->
+              <div class="d-flex flex-wrap gap-2 align-items-center mb-3 pb-2 border-bottom">
+                <span class="text-muted small font-weight-bold me-1">
+                  <i class="mdi mdi-clock-fast text-primary me-1"></i>Lọc nhanh kỳ báo cáo:
+                </span>
+                <div class="btn-group btn-group-sm flex-wrap" id="reportQuickFilterGroup">
+                  <button type="button" class="btn btn-gradient-primary active" id="btn-quick-today" onclick="setQuickShift('today')">
+                    <i class="mdi mdi-calendar-today me-1"></i>Hôm nay
+                  </button>
+                  <button type="button" class="btn btn-outline-primary" id="btn-quick-yesterday" onclick="setQuickShift('yesterday')">
+                    Hôm qua
+                  </button>
+                  <button type="button" class="btn btn-outline-primary" id="btn-quick-week" onclick="setQuickShift('week')">
+                    7 ngày qua
+                  </button>
+                  <button type="button" class="btn btn-outline-primary" id="btn-quick-thisMonth" onclick="setQuickShift('thisMonth')">
+                    Tháng này
+                  </button>
+                  <button type="button" class="btn btn-outline-primary" id="btn-quick-lastMonth" onclick="setQuickShift('lastMonth')">
+                    Tháng trước
+                  </button>
                 </div>
-                <div class="col-md-4 mb-2">
-                  <label for="reportToDate" class="font-weight-bold">Đến ngày:</label>
-                  <input type="date" id="reportToDate" class="form-control">
+              </div>
+
+              <!-- Clean Form Layout: 3 Columns (Col 1: Cashier, Col 2: Start Time, Col 3: End Time) -->
+              <div class="row g-3">
+                <div class="col-md-4">
+                  <label for="reportCashierSelect" class="form-label font-weight-bold text-dark">
+                    <i class="mdi mdi-account-tie text-primary me-1"></i>Thu ngân phụ trách:
+                  </label>
+                  <select id="reportCashierSelect" class="form-select form-control" onchange="onReportCashierChange(this.value)">
+                    <option value="">-- Tất cả thu ngân (Toàn nhà hàng) --</option>
+                  </select>
                 </div>
-                <div class="col-md-4 mb-2 d-flex gap-2">
-                  <button class="btn btn-gradient-primary flex-grow-1" onclick="handleFetchReport(true)">
+
+                <div class="col-md-4">
+                  <label for="reportShiftStart" class="form-label font-weight-bold text-dark">
+                    <i class="mdi mdi-calendar-clock text-info me-1"></i>Từ thời điểm (Giờ vào ca / Bắt đầu):
+                  </label>
+                  <input type="datetime-local" id="reportShiftStart" class="form-control" style="background:#fff;">
+                </div>
+
+                <div class="col-md-4">
+                  <label for="reportShiftEnd" class="form-label font-weight-bold text-dark">
+                    <i class="mdi mdi-calendar-check text-danger me-1"></i>Đến thời điểm (Giờ kết ca / Ra ca):
+                  </label>
+                  <input type="datetime-local" id="reportShiftEnd" class="form-control" style="background:#fff;">
+                </div>
+              </div>
+
+              <!-- Action Buttons -->
+              <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mt-3 pt-2 border-top">
+                <div class="d-flex flex-wrap gap-2">
+                  <button class="btn btn-gradient-primary px-4 shadow-sm" onclick="handleFetchReport(true)">
                     <i class="mdi mdi-magnify me-1"></i> Xem báo cáo
                   </button>
-                  <button class="btn btn-outline-info" onclick="printReport()">
-                    <i class="mdi mdi-printer"></i> In 
+                  <button class="btn btn-outline-info shadow-sm" onclick="printReport()" title="In phiếu báo cáo kết ca dạng nhiệt POS (80mm)">
+                    <i class="mdi mdi-printer me-1"></i> In phiếu kết ca (POS 80mm)
                   </button>
+                  <button class="btn btn-outline-success shadow-sm" onclick="exportRevenueExcel()" title="Tải xuống tệp Excel (CSV)">
+                    <i class="mdi mdi-file-excel me-1"></i> Xuất Excel (CSV)
+                  </button>
+                  <button class="btn btn-outline-dark shadow-sm" onclick="printA4RevenueReport()" title="In báo cáo chi tiết chuẩn trang A4">
+                    <i class="mdi mdi-printer-pos me-1"></i> In báo cáo A4
+                  </button>
+                </div>
+                <div class="text-muted small" id="reportLastUpdatedText"></div>
+              </div>
+
+              <!-- Hidden inputs for backward compatibility -->
+              <input type="hidden" id="reportFromDate">
+              <input type="hidden" id="reportToDate">
+
+              <div id="reportShiftBanner" class="mt-3 p-3 bg-light rounded shadow-sm d-none" style="font-size: 14px; border-left: 4px solid #10b981;">
+                <!-- Dynamic shift badge info -->
+              </div>
+            </div>
+          </div>
+
+          <!-- 1. DÒNG KPI CHÍNH: DÒNG TIỀN & DOANH THU THỰC TẾ -->
+          <div class="row mb-3">
+            <div class="col-md-3 mb-3">
+              <div class="card bg-gradient-danger text-white h-100 shadow-sm">
+                <div class="card-body text-center p-3">
+                  <i class="mdi mdi-cash-multiple mdi-36px mb-1"></i>
+                  <h6 class="text-white mb-1">TỔNG THỰC THU</h6>
+                  <h3 class="font-weight-bold my-2" id="reportTotalRevenue">0 ₫</h3>
+                  <small id="reportSubtotalText">Gốc: 0 ₫</small>
+                </div>
+              </div>
+            </div>
+
+            <div class="col-md-3 mb-3">
+              <div class="card bg-gradient-success text-white h-100 shadow-sm">
+                <div class="card-body text-center p-3">
+                  <i class="mdi mdi-cash mdi-36px mb-1"></i>
+                  <h6 class="text-white mb-1">TIỀN MẶT (KÉT)</h6>
+                  <h3 class="font-weight-bold my-2" id="reportTotalCash">0 ₫</h3>
+                  <small id="reportCashCountText">0 lượt thanh toán</small>
+                </div>
+              </div>
+            </div>
+
+            <div class="col-md-3 mb-3">
+              <div class="card bg-gradient-info text-white h-100 shadow-sm">
+                <div class="card-body text-center p-3">
+                  <i class="mdi mdi-qrcode-scan mdi-36px mb-1"></i>
+                  <h6 class="text-white mb-1">CHUYỂN KHOẢN / QR</h6>
+                  <h3 class="font-weight-bold my-2" id="reportTotalTransfer">0 ₫</h3>
+                  <small id="reportTransferCountText">0 lượt thanh toán</small>
+                </div>
+              </div>
+            </div>
+
+            <div class="col-md-3 mb-3">
+              <div class="card bg-gradient-warning text-dark h-100 shadow-sm">
+                <div class="card-body text-center p-3">
+                  <i class="mdi mdi-tag-percent mdi-36px mb-1 text-dark"></i>
+                  <h6 class="text-dark mb-1">TỔNG GIẢM GIÁ</h6>
+                  <h3 class="font-weight-bold my-2 text-danger" id="reportTotalDiscount">0 ₫</h3>
+                  <small class="text-dark">Chiết khấu & Khuyến mãi</small>
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- 5 Revenue Summary KPI Cards -->
+          <!-- 2. DÒNG KPI HOẠT ĐỘNG: SỐ HĐ, TB ĐƠN & MÓN ĂN -->
           <div class="row mb-4">
-            <div class="col-md mb-3">
-              <div class="card bg-gradient-danger text-white h-100">
+            <div class="col-md-3 mb-2">
+              <div class="card bg-white border h-100 shadow-sm">
                 <div class="card-body text-center p-3">
-                  <i class="mdi mdi-cash-multiple mdi-36px mb-1"></i>
-                  <h6 class="text-white mb-1">TỔNG DOANH THU</h6>
-                  <h3 class="font-weight-bold my-2" id="reportTotalRevenue">0 ₫</h3>
-                  <small>Hóa đơn hoàn tất</small>
+                  <i class="mdi mdi-receipt-text mdi-24px text-primary mb-1"></i>
+                  <h6 class="text-muted mb-1">SỐ HÓA ĐƠN</h6>
+                  <h4 class="font-weight-bold my-1 text-primary" id="reportTotalInvoices">0 HĐ</h4>
+                  <small class="text-muted">Đã thanh toán thành công</small>
                 </div>
               </div>
             </div>
 
-            <div class="col-md mb-3">
-              <div class="card bg-gradient-info text-white h-100">
+            <div class="col-md-3 mb-2">
+              <div class="card bg-white border h-100 shadow-sm">
                 <div class="card-body text-center p-3">
-                  <i class="mdi mdi-receipt-text mdi-36px mb-1"></i>
-                  <h6 class="text-white mb-1">SỐ HÓA ĐƠN</h6>
-                  <h3 class="font-weight-bold my-2" id="reportTotalInvoices">0</h3>
-                  <small>Đã thanh toán</small>
+                  <i class="mdi mdi-calculator mdi-24px text-success mb-1"></i>
+                  <h6 class="text-muted mb-1">TRUNG BÌNH / HÓA ĐƠN</h6>
+                  <h4 class="font-weight-bold my-1 text-success" id="reportAverageInvoice">0 ₫</h4>
+                  <small class="text-muted">Giá trị trung bình 1 đơn</small>
                 </div>
               </div>
             </div>
 
-            <div class="col-md mb-3">
-              <div class="card bg-gradient-success text-white h-100">
+            <div class="col-md-3 mb-2">
+              <div class="card bg-white border h-100 shadow-sm">
                 <div class="card-body text-center p-3">
-                  <i class="mdi mdi-calculator mdi-36px mb-1"></i>
-                  <h6 class="text-white mb-1">TRUNG BÌNH/HÓA ĐƠN</h6>
-                  <h3 class="font-weight-bold my-2" id="reportAverageInvoice">0 ₫</h3>
-                  <small>Giá trị TB</small>
+                  <i class="mdi mdi-food mdi-24px text-danger mb-1"></i>
+                  <h6 class="text-muted mb-1">TỔNG MÓN ĐÃ BÁN</h6>
+                  <h4 class="font-weight-bold my-1 text-danger" id="reportTotalItemsSold">0 phần</h4>
+                  <small class="text-muted">Suất ăn phục vụ khách</small>
                 </div>
               </div>
             </div>
 
-            <div class="col-md mb-3">
-              <div class="card bg-gradient-primary text-white h-100">
+            <div class="col-md-3 mb-2">
+              <div class="card bg-white border h-100 shadow-sm">
                 <div class="card-body text-center p-3">
-                  <i class="mdi mdi-food mdi-36px mb-1"></i>
-                  <h6 class="text-white mb-1">TỔNG MÓN ĐÃ BÁN</h6>
-                  <h3 class="font-weight-bold my-2" id="reportTotalItemsSold">0</h3>
-                  <small>Phần/Suất ăn</small>
-                </div>
-              </div>
-            </div>
-
-            <div class="col-md mb-3">
-              <div class="card bg-gradient-warning text-dark h-100">
-                <div class="card-body text-center p-3">
-                  <i class="mdi mdi-crown mdi-36px mb-1 text-dark"></i>
-                  <h6 class="text-dark mb-1">MÓN BÁN CHẠY NHẤT</h6>
-                  <h4 class="font-weight-bold my-1 text-truncate" id="reportBestSellerName">-</h4>
-                  <small id="reportBestSellerStats">0 suất</small>
+                  <i class="mdi mdi-crown mdi-24px text-warning mb-1"></i>
+                  <h6 class="text-muted mb-1">MÓN BÁN CHẠY NHẤT</h6>
+                  <h5 class="font-weight-bold my-1 text-truncate text-dark" id="reportBestSellerName">-</h5>
+                  <small class="text-muted" id="reportBestSellerStats">0 suất</small>
                 </div>
               </div>
             </div>
@@ -941,6 +1085,49 @@
                       </thead>
                       <tbody id="reportItemsBreakdownBody">
                         <tr><td colspan="5" class="text-center text-muted">Đang tải chi tiết món bán...</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Invoices List in Filter Period -->
+          <div class="row">
+            <div class="col-12 grid-margin stretch-card">
+              <div class="card">
+                <div class="card-body">
+                  <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                    <h4 class="card-title text-primary mb-0">
+                      <i class="mdi mdi-receipt-text-check-outline me-2"></i>Danh sách hóa đơn trong kỳ báo cáo
+                    </h4>
+                    <div class="d-flex align-items-center gap-2">
+                      <div class="input-group input-group-sm" style="width: 280px;">
+                        <span class="input-group-text bg-light"><i class="mdi mdi-magnify"></i></span>
+                        <input type="text" id="reportInvoiceSearchInput" class="form-control" placeholder="Tìm mã HĐ, bàn, thu ngân, PTTT..." oninput="filterReportInvoicesTable(this.value)">
+                      </div>
+                      <span class="badge bg-primary text-white" id="reportInvoicesListBadge">0 hóa đơn</span>
+                    </div>
+                  </div>
+                  <div class="table-responsive" style="max-height: 420px; overflow-y: auto;">
+                    <table class="table table-hover table-striped">
+                      <thead class="table-light sticky-top">
+                        <tr>
+                          <th>#</th>
+                          <th>Mã HĐ</th>
+                          <th>Bàn</th>
+                          <th>Thời gian TT</th>
+                          <th>Thu ngân</th>
+                          <th>PTTT</th>
+                          <th class="text-end">Tiền gốc</th>
+                          <th class="text-end">Giảm giá</th>
+                          <th class="text-end">Thực thu</th>
+                          <th class="text-center">Thao tác</th>
+                        </tr>
+                      </thead>
+                      <tbody id="reportInvoicesListBody">
+                        <tr><td colspan="10" class="text-center text-muted">Đang tải danh sách hóa đơn...</td></tr>
                       </tbody>
                     </table>
                   </div>
@@ -1186,8 +1373,8 @@
       <div class="modal-body" id="invoicePrintArea">
         <div class="row mb-3 p-3 bg-light rounded border">
           <div class="col-md-6 mb-2">
-            <p class="mb-1"><strong>Mã Hóa đơn:</strong> #<span id="modalInvoiceCode">-</span></p>
-            <p class="mb-1"><strong>Mã Đơn hàng:</strong> #<span id="modalInvoiceOrderCode">-</span></p>
+            <p class="mb-1 font-weight-bold text-dark">#<span id="modalInvoiceCode">-</span></p>
+            <p class="mb-1 font-weight-bold text-dark">#<span id="modalInvoiceOrderCode">-</span></p>
             <p class="mb-1"><strong>Khách hàng:</strong> <span id="modalInvoiceCustomer">-</span></p>
             <p class="mb-0"><strong>Nhân viên order:</strong> <span id="modalInvoiceStaff" class="text-primary font-weight-bold">-</span></p>
           </div>
@@ -1247,27 +1434,110 @@
   </div>
 </div>
 
-<!-- 7. Modal Discount -->
-<div class="modal fade" id="discountModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog">
+
+<!-- 8. Modal Cashier Shift Orders Detail -->
+<div class="modal fade" id="cashierShiftOrdersModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
     <div class="modal-content">
-      <form onsubmit="handleApplyDiscount(event)">
-        <input type="hidden" id="discountInvoiceId">
-        <div class="modal-header bg-gradient-primary text-white">
-          <h5 class="modal-title text-white">Áp dụng giảm giá hóa đơn</h5>
-          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-        </div>
-        <div class="modal-body">
-          <div class="mb-3">
-            <label class="form-label">Phần trăm giảm giá (%) <span class="text-danger">*</span></label>
-            <input type="number" id="discountPercent" class="form-control" placeholder="Ví dụ: 10, 20" required min="0" max="100">
+      <div class="modal-header bg-gradient-primary text-white">
+        <h5 class="modal-title text-white">
+          <i class="mdi mdi-account-clock me-2"></i>Chi Tiết Ca Làm Việc & Đơn Hàng - Thu Ngân <span id="shiftModalCashierName" class="text-warning font-weight-bold">-</span>
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-4">
+        <!-- 1. Shift Meta Info & Time -->
+        <div class="row p-3 bg-light rounded border mb-3 align-items-center">
+          <div class="col-md-6 mb-2 mb-md-0">
+            <p class="mb-1"><strong>Thu ngân phụ trách:</strong> <span id="shiftModalCashierText" class="text-primary font-weight-bold" style="font-size: 15px;">-</span></p>
+            <p class="mb-1"><strong>Giờ vào ca:</strong> <span id="shiftModalStartTime" class="badge bg-light text-dark border">-</span></p>
+            <p class="mb-0"><strong>Giờ kết ca:</strong> <span id="shiftModalEndTime" class="badge bg-success text-white">-</span></p>
+          </div>
+          <div class="col-md-6 text-md-end">
+            <p class="mb-1"><strong>Trạng thái ca:</strong> <span id="shiftModalStatusBadge" class="badge bg-warning text-dark">Đang trong ca</span></p>
+            <p class="mb-1"><strong>Số đơn hàng / HĐ:</strong> <span id="shiftModalInvoicesCount" class="badge bg-primary text-white">0 đơn</span></p>
+            <p class="mb-0"><strong>Thời gian tra cứu:</strong> <span id="shiftModalLookupTime" class="text-muted small">-</span></p>
           </div>
         </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
-          <button type="submit" class="btn btn-gradient-primary">Áp dụng giảm giá</button>
+
+        <!-- 2. Financial KPI Cards for this Shift -->
+        <div class="row g-2 mb-3">
+          <div class="col-md-3 col-6">
+            <div class="card bg-gradient-danger text-white shadow-sm h-100">
+              <div class="card-body text-center p-3">
+                <small class="text-white-50 text-uppercase font-weight-bold">Tổng Thực Thu Ca</small>
+                <h4 class="font-weight-bold mt-1 mb-0" id="shiftModalTotalRevenue">0 ₫</h4>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-3 col-6">
+            <div class="card bg-gradient-success text-white shadow-sm h-100">
+              <div class="card-body text-center p-3">
+                <small class="text-white-50 text-uppercase font-weight-bold">Tiền Mặt (Két)</small>
+                <h4 class="font-weight-bold mt-1 mb-0" id="shiftModalTotalCash">0 ₫</h4>
+                <small id="shiftModalCashCount" class="text-white-50">0 lượt</small>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-3 col-6">
+            <div class="card bg-gradient-info text-white shadow-sm h-100">
+              <div class="card-body text-center p-3">
+                <small class="text-white-50 text-uppercase font-weight-bold">Chuyển Khoản / QR</small>
+                <h4 class="font-weight-bold mt-1 mb-0" id="shiftModalTotalTransfer">0 ₫</h4>
+                <small id="shiftModalTransferCount" class="text-white-50">0 lượt</small>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-3 col-6">
+            <div class="card bg-gradient-warning text-dark shadow-sm h-100">
+              <div class="card-body text-center p-3">
+                <small class="text-dark text-uppercase font-weight-bold">Tổng Giảm Giá</small>
+                <h4 class="font-weight-bold mt-1 mb-0 text-danger" id="shiftModalTotalDiscount">0 ₫</h4>
+              </div>
+            </div>
+          </div>
         </div>
-      </form>
+
+        <!-- 3. Invoices / Orders Table of this Shift -->
+        <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+          <h5 class="mb-0 text-primary font-weight-bold">
+            <i class="mdi mdi-receipt-text-outline me-1"></i> Danh Sách Đơn Hàng / Hóa Đơn Trong Ca
+          </h5>
+          <span class="text-muted small" id="shiftModalOrdersHint">Click 'Chi tiết' để xem các món ăn trong đơn</span>
+        </div>
+        <div class="table-responsive" style="max-height: 380px; overflow-y: auto;">
+          <table class="table table-hover table-striped align-middle mb-0">
+            <thead class="table-light sticky-top">
+              <tr>
+                <th>#</th>
+                <th>Mã HĐ</th>
+                <th>Bàn</th>
+                <th>Thời gian TT</th>
+                <th>Nhân viên order</th>
+                <th>PTTT</th>
+                <th class="text-end">Tiền gốc</th>
+                <th class="text-end">Giảm giá</th>
+                <th class="text-end">Thực thu</th>
+                <th class="text-center">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody id="shiftModalOrdersBody">
+              <tr><td colspan="10" class="text-center text-muted py-3">Đang tải danh sách đơn hàng trong ca...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer d-flex justify-content-between">
+        <div>
+          <button type="button" class="btn btn-outline-info" id="shiftModalPrintK80Btn">
+            <i class="mdi mdi-printer me-1"></i> In Phiếu Ca (POS 80mm)
+          </button>
+          <button type="button" class="btn btn-outline-dark ms-1" id="shiftModalPrintA4Btn">
+            <i class="mdi mdi-printer-pos me-1"></i> In Báo Cáo A4
+          </button>
+        </div>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Đóng</button>
+      </div>
     </div>
   </div>
 </div>
@@ -1280,7 +1550,7 @@
 <!-- SweetAlert2 library -->
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <!-- Admin App JavaScript -->
-<script src="assets/js/admin-app.js?v=2.1"></script>
+<script src="assets/js/admin-app.js?v=3.3"></script>
 
 </body>
 </html>

@@ -193,7 +193,9 @@
                         </div>
                     </div>
                     <!-- /LOGO -->
-                    <div class="col-md-9 text-right" style="padding-top: 15px; display: flex; justify-content: flex-end; align-items: center; gap: 15px;">
+                    <div class="col-md-9 text-right" style="padding-top: 15px; display: flex; justify-content: flex-end; align-items: center; gap: 12px; flex-wrap: wrap;">
+                        <button class="btn btn-warning" id="btn-cashier-opening-cash-pos" onclick="promptCashierOpeningCashModal(true)" style="display:none; font-weight: bold; border-radius: 6px; padding: 6px 14px; background-color: #d97706; border: 1px solid #f59e0b; color: white;" title="Số tiền mặt trong két đầu ca (Đã chốt)"><i class="fa fa-money"></i> Két: <b id="headerOpeningCashTextPos">0 ₫</b></button>
+                        <button class="btn btn-info" id="btn-cashier-shift" onclick="openCashierShiftModal()" style="font-weight: bold; border-radius: 6px; padding: 6px 14px; background-color: #0284c7; border: 1px solid #38bdf8;" title="Báo cáo kết ca thu ngân"><i class="fa fa-file-text-o"></i> Báo cáo ca / Kết ca</button>
                         <a href="/kitchen" class="btn btn-warning" style="font-weight: bold; border-radius: 6px; padding: 6px 14px;"><i class="fa fa-fire"></i> Màn hình Bếp (KDS)</a>
                         <h3 style="color: white; margin: 0;">SƠ ĐỒ BÀN (POS)</h3>
                     </div>
@@ -311,16 +313,33 @@
             return response.json();
         }
 
+        // Lấy tên hiển thị của thu ngân (TUYỆT ĐỐI KHÔNG LẤY ROLE hoặc fallback Administrator)
+        function getCashierDisplayName() {
+            let name = localStorage.getItem('userFullName');
+            if (name && !name.toUpperCase().startsWith('ROLE_') && name.toUpperCase() !== 'ADMIN' && name.toUpperCase() !== 'CASHIER' && name.toUpperCase() !== 'ADMINISTRATOR') {
+                return name.trim();
+            }
+            let userName = localStorage.getItem('userName');
+            if (userName && !userName.toUpperCase().startsWith('ROLE_') && userName.toUpperCase() !== 'ADMIN' && userName.toUpperCase() !== 'CASHIER' && userName.toUpperCase() !== 'ADMINISTRATOR') {
+                return userName.trim();
+            }
+            let email = localStorage.getItem('userEmail') || '';
+            if (email && email.includes('@')) {
+                return email.split('@')[0];
+            }
+            return email || 'Thu ngân';
+        }
+
         async function setupAuthUI() {
             let fullName = localStorage.getItem('userFullName');
             const email = localStorage.getItem('userEmail');
             const userId = localStorage.getItem('userId');
 
-            if (!fullName && userId) {
+            if ((!fullName || fullName.toUpperCase().startsWith('ROLE_') || fullName.toUpperCase() === 'ADMIN' || fullName.toUpperCase() === 'CASHIER' || fullName.toUpperCase() === 'ADMINISTRATOR') && userId) {
                 try {
                     const uRes = await fetchWithAuth(`/users/${userId}`);
-                    if (uRes && uRes.data && uRes.data.fullName) {
-                        fullName = uRes.data.fullName;
+                    if (uRes && uRes.data && (uRes.data.fullName || uRes.data.username)) {
+                        fullName = (uRes.data.fullName || uRes.data.username).trim();
                         localStorage.setItem('userFullName', fullName);
                     }
                 } catch(e) {}
@@ -328,7 +347,7 @@
 
             const authLinks = document.getElementById('auth-links');
             if(authLinks) {
-                const displayName = fullName || email || 'Nhân viên';
+                const displayName = getCashierDisplayName();
                 authLinks.innerHTML = `
                     <li><a href="#"><i class="fa fa-user-o"></i> ${escapeHtml(displayName)}</a></li>
                     <li><a href="#" onclick="logout(event)"><i class="fa fa-sign-out"></i> Đăng xuất</a></li>
@@ -338,9 +357,12 @@
 
         window.logout = function(e) {
             if(e) e.preventDefault();
-            localStorage.clear();
-            window.location.href = '/login';
-        }
+            if(confirm("Bạn có chắc chắn muốn đăng xuất?")) {
+                const authKeys = ['token', 'userRole', 'userRoles', 'role', 'userEmail', 'userId', 'userFullName', 'userName'];
+                authKeys.forEach(k => localStorage.removeItem(k));
+                window.location.href = '/login';
+            }
+        };
 
         let allTablesData = [];
         let allActiveOrdersData = [];
@@ -488,7 +510,10 @@
                                     ` : `
                                         <p style="margin: 0; color: #0284c7; font-weight: bold; font-size: 13px;"><i class="fa fa-clock-o"></i> Chờ bếp nhận đơn</p>
                                     `}
-                                    <small class="text-muted">Mã ĐH: #${activeOrder.orderCode}</small>
+                                    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:2px;">
+                                        <small class="text-muted">Mã ĐH: #${activeOrder.orderCode}</small>
+                                        <span class="badge" style="background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd; font-size:10px; font-weight:600;"><i class="fa fa-user-circle"></i> ${escapeHtml(activeOrder.username || 'Nhân viên')}</span>
+                                    </div>
                                     <div style="font-size: 11px; color: #1e40af; background: #eff6ff; border: 1px dashed #93c5fd; border-radius: 4px; padding: 4px 6px; margin: 4px 0; text-align: left; cursor: pointer;" onclick="event.stopPropagation(); viewEditDiningCustomerPos(${activeOrder.id}, '${escapeHtml(displayName)}')" title="Nhấn để xem và sửa thông tin khách ăn">
                                         <div style="display:flex; justify-content:space-between; align-items:center;">
                                             <span><i class="fa fa-user"></i> <b>${escapeHtml(activeOrder.customerName || 'Khách vãng lai')}</b></span>
@@ -1827,10 +1852,1277 @@
             }
         };
 
+        // =============================================================
+        // CASHIER SHIFT REPORT / BÁO CÁO KẾT CA THU NGÂN
+        // =============================================================
+        // =============================================================
+        // QUẢN LÝ TIỀN KÉT ĐẦU CA & BÁO CÁO KẾT CA THU NGÂN
+        // =============================================================
+        function getActiveCashierShift() {
+            const userId = localStorage.getItem('userId');
+            const userEmail = localStorage.getItem('userEmail');
+            const currentName = getCashierDisplayName();
+            const myKey = (currentName || '').trim().toLowerCase();
+
+            // 1. Kiểm tra trong registry đa ca activeCashierShifts_map
+            try {
+                const mapRaw = localStorage.getItem('activeCashierShifts_map');
+                if (mapRaw) {
+                    const map = JSON.parse(mapRaw);
+                    if (map && typeof map === 'object') {
+                        if (myKey && map[myKey] && map[myKey].status === 'OPEN') {
+                            return map[myKey];
+                        }
+                        const activeEntries = Object.values(map).filter(s => s && s.status === 'OPEN');
+                        if (activeEntries.length > 0) {
+                            return activeEntries[activeEntries.length - 1];
+                        }
+                    }
+                }
+            } catch(e) {}
+
+            // 2. Kiểm tra theo user key
+            let shiftRaw = null;
+            if (userId) shiftRaw = localStorage.getItem('activeCashierShift_' + userId);
+            if (!shiftRaw && userEmail) shiftRaw = localStorage.getItem('activeCashierShift_' + userEmail);
+            if (!shiftRaw && myKey) shiftRaw = localStorage.getItem('activeCashierShift_' + myKey);
+            if (!shiftRaw) shiftRaw = localStorage.getItem('activeCashierShift');
+            
+            if (shiftRaw) {
+                try {
+                    const shift = JSON.parse(shiftRaw);
+                    if (shift && shift.status === 'OPEN') {
+                        return shift;
+                    }
+                } catch(e) {}
+            }
+            
+            const savedCash = localStorage.getItem('shiftOpeningCash');
+            const savedTime = localStorage.getItem('shiftOpeningTime') || localStorage.getItem('shiftLoginTime');
+            if (savedCash !== null && savedCash !== undefined && savedTime) {
+                return {
+                    openingCash: parseInt(savedCash, 10) || 0,
+                    shiftStartTime: savedTime,
+                    cashierName: localStorage.getItem('shiftOpeningCashier') || currentName,
+                    cashierId: userId,
+                    status: 'OPEN'
+                };
+            }
+            return null;
+        }
+
+        function getCashierOpeningCash() {
+            const shift = getActiveCashierShift();
+            if (shift && shift.openingCash !== undefined) {
+                return Math.max(0, parseInt(shift.openingCash, 10));
+            }
+            const val = localStorage.getItem('shiftOpeningCash');
+            if (val !== null && val !== undefined && !isNaN(Number(val))) {
+                return Math.max(0, parseInt(val, 10));
+            }
+            return 0;
+        }
+
+        let currentDrawerTotalCashPos = 0;
+        let currentShiftCashRevenuePos = 0;
+
+        function updateOpeningCashBadge(amount, openingCash = 0, shiftCash = 0) {
+            const formatted = Number(amount || 0).toLocaleString('vi-VN') + ' ₫';
+            const activeShift = getActiveCashierShift();
+            const openerName = (activeShift && activeShift.cashierName) || localStorage.getItem('shiftOpeningCashier') || '';
+            const currentLoggedInName = getCashierDisplayName();
+            const isDifferentUser = openerName && currentLoggedInName && (openerName.trim().toLowerCase() !== currentLoggedInName.trim().toLowerCase());
+
+            const textEl = document.getElementById('headerOpeningCashTextPos');
+            if (textEl) {
+                textEl.innerHTML = `${formatted}${isDifferentUser ? ` <span style="font-size:11px; opacity:0.9; font-weight:normal;">(Ca do ${escapeHtml(openerName)} mở)</span>` : ''}`;
+            }
+            const btnEl = document.getElementById('btn-cashier-opening-cash-pos');
+            if (btnEl) {
+                btnEl.style.display = 'inline-block';
+                let tip = `Tổng tiền mặt trong két: ${Number(amount).toLocaleString('vi-VN')} ₫`;
+                if (shiftCash > 0) {
+                    tip += ` (Vốn đầu ca: ${Number(openingCash).toLocaleString('vi-VN')} ₫ + Thu thêm trong ca: ${Number(shiftCash).toLocaleString('vi-VN')} ₫)`;
+                } else {
+                    tip += ` (Vốn đầu ca đã chốt)`;
+                }
+                if (isDifferentUser) {
+                    tip += ` [Ca do ${openerName} mở]`;
+                }
+                btnEl.title = tip;
+            }
+        }
+
+        async function syncShiftToServer(shiftData) {
+            if (!shiftData) return;
+            try {
+                const cName = shiftData.cashierName || shiftData.openedBy || getCashierDisplayName();
+                const userId = localStorage.getItem('userId');
+                const slug = (cName || 'cashier')
+                    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                    .replace(/đ/g, 'd').replace(/Đ/g, 'd')
+                    .toLowerCase().replace(/[^a-z0-9]/g, '');
+                const phone = ('SH_' + (userId ? ('U' + userId) : (slug || 'c'))).slice(0, 20);
+                const payload = {
+                    c: cName,
+                    b: shiftData.openedBy || cName,
+                    cb: shiftData.closedBy || '',
+                    s: shiftData.shiftStartTime || shiftData.shiftStart,
+                    e: shiftData.shiftEndTime || shiftData.shiftEnd || '',
+                    o: Number(shiftData.openingCash) || 0,
+                    st: shiftData.status || 'OPEN',
+                    d: (shiftData.shiftStartTime || new Date().toISOString()).split('T')[0]
+                };
+                await fetchWithAuth('/customers/check-in', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        phone: phone,
+                        fullName: JSON.stringify(payload)
+                    })
+                });
+            } catch(e) {}
+        }
+
+        async function syncShiftClosedToServer(cName, sStart, sEnd, closerName) {
+            try {
+                const slug = (cName || 'cashier')
+                    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                    .replace(/đ/g, 'd').replace(/Đ/g, 'd')
+                    .toLowerCase().replace(/[^a-z0-9]/g, '');
+                const userId = localStorage.getItem('userId');
+                let targetPhone = ('SH_' + (userId ? ('U' + userId) : (slug || 'c'))).slice(0, 20);
+                try {
+                    const custRes = await fetchWithAuth('/customers');
+                    const custList = (custRes && custRes.data) || [];
+                    const cLower = (cName || '').trim().toLowerCase();
+                    for (const c of custList) {
+                        if (c.phone && c.phone.startsWith('SH_') && c.fullName && c.fullName.startsWith('{')) {
+                            try {
+                                const sData = JSON.parse(c.fullName);
+                                if ((sData.c || '').trim().toLowerCase() === cLower && sData.st === 'OPEN') {
+                                    targetPhone = c.phone;
+                                    break;
+                                }
+                            } catch(e) {}
+                        }
+                    }
+                } catch(e) {}
+
+                const now = new Date();
+                const pad = n => String(n).padStart(2, '0');
+                const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+                await fetchWithAuth('/customers/check-in', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        phone: targetPhone,
+                        fullName: JSON.stringify({
+                            c: cName,
+                            b: cName,
+                            cb: closerName || cName,
+                            s: sStart,
+                            e: sEnd || now.toISOString(),
+                            st: 'CLOSED',
+                            d: todayStr
+                        })
+                    })
+                });
+            } catch(e) {}
+        }
+
+        function performLocalShiftClosePos(serverShiftInfo = null) {
+            const activeBeforeClose = getActiveCashierShift();
+            const currentLoggedInName = getCashierDisplayName();
+            const cName = (serverShiftInfo && (serverShiftInfo.c || serverShiftInfo.cashierName || serverShiftInfo.b)) || localStorage.getItem('shiftOpeningCashier') || currentLoggedInName;
+            const cKey = (cName || '').trim().toLowerCase();
+            const closerName = (serverShiftInfo && (serverShiftInfo.cb || serverShiftInfo.closedBy)) || 'Quản trị viên';
+
+            try {
+                const pad = n => String(n).padStart(2, '0');
+                const now = new Date();
+                const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+                const key = 'closedCashierShifts_' + todayStr;
+                const list = JSON.parse(localStorage.getItem(key) || '[]');
+                const sStart = (serverShiftInfo && (serverShiftInfo.s || serverShiftInfo.shiftStartTime)) || localStorage.getItem('shiftOpeningTime');
+                const sEnd = (serverShiftInfo && (serverShiftInfo.e || serverShiftInfo.shiftEndTime)) || now.toISOString();
+
+                const alreadyExists = list.some(item => 
+                    (item.cashierName || '').toLowerCase() === cKey && item.shiftStartTime === sStart
+                );
+                if (!alreadyExists) {
+                    list.push({
+                        id: 'shift_' + Date.now(),
+                        cashierName: cName,
+                        openedBy: (serverShiftInfo && (serverShiftInfo.b || serverShiftInfo.openedBy)) || cName,
+                        closedBy: closerName,
+                        shiftStartTime: sStart,
+                        shiftEndTime: sEnd,
+                        closedAt: now.toISOString(),
+                        openingCash: Number(serverShiftInfo && serverShiftInfo.o) || Number(localStorage.getItem('shiftOpeningCash')) || 0,
+                        status: 'CLOSED'
+                    });
+                    localStorage.setItem(key, JSON.stringify(list));
+                }
+            } catch(e) {}
+
+            let map = {};
+            try { map = JSON.parse(localStorage.getItem('activeCashierShifts_map') || '{}') || {}; } catch(e) {}
+            Object.keys(map).forEach(k => {
+                const val = map[k];
+                const vName = val ? (val.cashierName || '').trim().toLowerCase() : '';
+                if (k === cKey || vName === cKey) {
+                    delete map[k];
+                }
+            });
+            localStorage.setItem('activeCashierShifts_map', JSON.stringify(map));
+
+            const userId = localStorage.getItem('userId');
+            const userEmail = localStorage.getItem('userEmail');
+            if (userId) localStorage.removeItem('activeCashierShift_' + userId);
+            if (userEmail) localStorage.removeItem('activeCashierShift_' + userEmail);
+            localStorage.removeItem('activeCashierShift_' + cKey);
+
+            // Dọn dẹp an toàn activeCashierShift & shiftOpening*
+            if (Object.keys(map).length === 0) {
+                localStorage.removeItem('activeCashierShift');
+                localStorage.removeItem('shiftOpeningCash');
+                localStorage.removeItem('shiftOpeningCashier');
+                localStorage.removeItem('shiftOpeningTime');
+                localStorage.removeItem('shiftLoginTime');
+                localStorage.removeItem('cashierLoginTime');
+            } else {
+                const remaining = Object.values(map);
+                localStorage.setItem('activeCashierShift', JSON.stringify(remaining[0]));
+                localStorage.setItem('shiftOpeningCash', remaining[0].openingCash || 0);
+                localStorage.setItem('shiftOpeningCashier', remaining[0].cashierName || '');
+                localStorage.setItem('shiftOpeningTime', remaining[0].shiftStartTime || '');
+            }
+
+            currentDrawerTotalCashPos = 0;
+            currentShiftCashRevenuePos = 0;
+            updateOpeningCashBadge(0, 0, 0);
+
+            // CHỈ hiển thị thông báo kết ca nếu trước đó người dùng THỰC SỰ ĐANG MỞ CA tại máy này
+            if (activeBeforeClose && !window._shiftClosedAlertShownPos) {
+                const actName = (activeBeforeClose.cashierName || '').trim().toLowerCase();
+                const myKey = (currentLoggedInName || '').trim().toLowerCase();
+
+                const normalizeStr = s => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+                const normC = normalizeStr(cKey);
+                const normMy = normalizeStr(myKey);
+                const normAct = normalizeStr(actName);
+                const isMatch = !normC || normC === normMy || normC === normAct || normMy.includes(normC) || normC.includes(normMy);
+
+                if (isMatch) {
+                    window._shiftClosedAlertShownPos = true;
+                    setTimeout(() => { window._shiftClosedAlertShownPos = false; }, 6000);
+
+                    Swal.fire({
+                        icon: 'info',
+                        title: 'Ca làm việc đã được kết thúc!',
+                        html: `
+                            <div style="text-align: left; font-size: 14px; line-height: 1.5;">
+                                <p>Ca làm việc của <b>${escapeHtml(cName)}</b> đã được kết thúc bởi <b>${escapeHtml(closerName)}</b>.</p>
+                                <div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; padding:10px; margin:10px 0; color:#166534;">
+                                    <i class="fa fa-check-circle"></i> Tiền két đã được bàn giao và đưa về <b>0 ₫</b>.
+                                </div>
+                                <p class="text-danger font-weight-bold" style="font-size:13.5px; text-align:center; margin-bottom:0; margin-top:8px;">
+                                    <i class="fa fa-sign-out"></i> Đang tự động đăng xuất... Vui lòng đăng nhập lại để mở ca mới!
+                                </p>
+                            </div>
+                        `,
+                        timer: 2500,
+                        timerProgressBar: true,
+                        showConfirmButton: true,
+                        confirmButtonColor: '#d33',
+                        confirmButtonText: '<i class="fa fa-sign-out"></i> Đăng xuất ngay',
+                        allowOutsideClick: false,
+                        allowEscapeKey: false
+                    }).then(() => {
+                        const authKeys = [
+                            'token', 'userRole', 'userRoles', 'role', 'userEmail', 'userId', 'userFullName', 'userName',
+                            'activeCashierShift', 'shiftOpeningCash', 'shiftOpeningCashier', 'shiftOpeningTime',
+                            'shiftLoginTime', 'cashierLoginTime', 'activeCashierShift_' + cKey
+                        ];
+                        authKeys.forEach(k => localStorage.removeItem(k));
+                        sessionStorage.clear();
+                        window.location.href = '/login';
+                    });
+                }
+            }
+        }
+
+        async function syncCurrentCashierDrawerCashPos() {
+            const roles = JSON.parse(localStorage.getItem('userRoles') || '[]');
+            const singleRole = localStorage.getItem('role') || localStorage.getItem('userRole') || '';
+            const allRoles = [...roles, singleRole];
+            const isCashier = allRoles.some(r => typeof r === 'string' && (r.toUpperCase().includes('ADMIN') || r.toUpperCase().includes('CASHIER')));
+            if (!isCashier) return;
+
+            let activeShift = getActiveCashierShift();
+            const currentCashierName = getCashierDisplayName();
+            const myKey = (currentCashierName || '').trim().toLowerCase();
+
+            // 1. Kiểm tra trạng thái ca từ Server DB trước tiên (Đồng bộ đa màn hình / Incognito / Admin đóng ca)
+            try {
+                const custRes = await fetchWithAuth('/customers');
+                const custList = (custRes && custRes.data) || [];
+                const openerKey = (activeShift && (activeShift.cashierName || activeShift.openedBy) ? activeShift.cashierName : currentCashierName).trim().toLowerCase();
+
+                let foundServerClosed = null;
+                let foundServerOpen = null;
+
+                const pad = n => String(n).padStart(2, '0');
+                const now = new Date();
+                const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+
+                for (const c of custList) {
+                    if (c.phone && c.phone.startsWith('SH_') && c.fullName && c.fullName.startsWith('{')) {
+                        try {
+                            const sData = JSON.parse(c.fullName);
+                            const sName = (sData.c || '').trim().toLowerCase();
+                            
+                            // CHỈ kiểm tra đóng ca khi thực tế máy này ĐANG CÓ CA MỞ
+                            if (activeShift && (sName === myKey || sName === openerKey)) {
+                                if (sData.st === 'CLOSED') {
+                                    const actStartMs = new Date(activeShift.shiftStartTime).getTime();
+                                    const sEndMs = sData.e ? new Date(sData.e).getTime() : (sData.s ? new Date(sData.s).getTime() : Date.now());
+                                    if (sEndMs >= actStartMs - 60000 || sData.s === activeShift.shiftStartTime) {
+                                        foundServerClosed = sData;
+                                    }
+                                }
+                            }
+                            
+                            // Phục hồi ca nếu máy này chưa có ca mở nhưng server có ca OPEN của ngày hôm nay
+                            if (!activeShift && sData.st === 'OPEN' && (!sData.d || sData.d === todayStr || (sData.s && sData.s.startsWith(todayStr)))) {
+                                if (sName === myKey) {
+                                    foundServerOpen = sData;
+                                } else if (!foundServerOpen) {
+                                    foundServerOpen = sData;
+                                }
+                            }
+                        } catch(e) {}
+                    }
+                }
+
+                // Nếu ca ĐANG MỞ mà bị đóng trên Server (bởi Admin hoặc máy khác)
+                if (activeShift && foundServerClosed) {
+                    performLocalShiftClosePos(foundServerClosed);
+                    return;
+                }
+
+                // Nếu local chưa có ca nhưng server có ca OPEN của hôm nay -> phục hồi ca
+                if (!activeShift && foundServerOpen) {
+                    const restoredShift = {
+                        id: 'server_' + (foundServerOpen.s || Date.now()),
+                        openingCash: Number(foundServerOpen.o) || 0,
+                        shiftStartTime: foundServerOpen.s,
+                        cashierName: foundServerOpen.c,
+                        openedBy: foundServerOpen.b || foundServerOpen.c,
+                        status: 'OPEN'
+                    };
+                    const restoredKey = (foundServerOpen.c || '').trim().toLowerCase();
+                    let map = {};
+                    try { map = JSON.parse(localStorage.getItem('activeCashierShifts_map') || '{}') || {}; } catch(e) {}
+                    map[restoredKey] = restoredShift;
+                    localStorage.setItem('activeCashierShifts_map', JSON.stringify(map));
+                    localStorage.setItem('activeCashierShift_' + restoredKey, JSON.stringify(restoredShift));
+                    localStorage.setItem('activeCashierShift', JSON.stringify(restoredShift));
+                    localStorage.setItem('shiftOpeningCash', restoredShift.openingCash);
+                    localStorage.setItem('shiftOpeningCashier', restoredShift.cashierName);
+                    localStorage.setItem('shiftOpeningTime', restoredShift.shiftStartTime);
+                    activeShift = restoredShift;
+                }
+            } catch(e) {}
+
+            activeShift = getActiveCashierShift();
+            if (!activeShift) {
+                currentDrawerTotalCashPos = 0;
+                currentShiftCashRevenuePos = 0;
+                updateOpeningCashBadge(0, 0, 0);
+                return;
+            }
+
+            // Đồng bộ trạng thái ca mở lên Server DB để Admin và các máy khác thấy tức thì
+            syncShiftToServer(activeShift);
+
+            const openingCash = Number(activeShift.openingCash) || 0;
+            const pad = n => String(n).padStart(2, '0');
+            const formatDtLocal = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+            const defaultStart = formatDtLocal(new Date(activeShift.shiftStartTime));
+            let startD = new Date(defaultStart).getTime();
+            const endD = Date.now() + 60000;
+
+            try {
+                const now = new Date();
+                const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+                const closedList = JSON.parse(localStorage.getItem('closedCashierShifts_' + todayStr) || '[]');
+                let lastClosedTime = new Date(`${todayStr}T00:00:00`).getTime();
+                closedList.forEach(cs => {
+                    const ct = new Date(cs.shiftEndTime || cs.closedAt || cs.shiftStartTime).getTime();
+                    if (ct > lastClosedTime) lastClosedTime = ct;
+                });
+
+                const res = await fetchWithAuth('/invoices/all');
+                const allInvoices = res.data || [];
+
+                allInvoices.forEach(inv => {
+                    if (inv.status !== 'PAID') return;
+                    const payTime = new Date(inv.paidAt || inv.issuedAt || inv.createdAt).getTime();
+                    if (!isNaN(payTime) && payTime >= lastClosedTime && payTime < startD) {
+                        startD = payTime;
+                    }
+                });
+
+                // Tính TOÀN BỘ tiền mặt phát sinh trong ca tại quầy (dù là Thu ngân hay Admin bấm thanh toán phụ)
+                let shiftCash = 0;
+                allInvoices.forEach(inv => {
+                    if (inv.status !== 'PAID') return;
+                    const payTime = new Date(inv.paidAt || inv.issuedAt || inv.createdAt).getTime();
+                    if (isNaN(payTime) || payTime < startD || payTime > endD) return;
+
+                    const pm = (inv.paymentMethod || '').toLowerCase();
+                    if (pm.includes('tiền mặt') || pm.includes('cash') || (!pm.includes('chuyển') && !pm.includes('transfer') && !pm.includes('qr') && !pm.includes('card') && !pm.includes('thẻ'))) {
+                        shiftCash += Number(inv.totalAmount || inv.finalAmount || 0);
+                    }
+                });
+
+                currentShiftCashRevenuePos = shiftCash;
+                currentDrawerTotalCashPos = openingCash + shiftCash;
+                updateOpeningCashBadge(currentDrawerTotalCashPos, openingCash, shiftCash);
+            } catch(e) {
+                currentDrawerTotalCashPos = openingCash;
+                currentShiftCashRevenuePos = 0;
+                updateOpeningCashBadge(openingCash, openingCash, 0);
+            }
+        }
+
+        function closeCashierShift(shiftData = null) {
+            const currentLoggedInName = getCashierDisplayName();
+            const cName = (shiftData && (shiftData.cashierName || shiftData.openedBy)) || localStorage.getItem('shiftOpeningCashier') || currentLoggedInName;
+            const cKey = (cName || '').trim().toLowerCase();
+
+            if (shiftData) {
+                try {
+                    const pad = n => String(n).padStart(2, '0');
+                    const now = new Date();
+                    const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+                    const key = 'closedCashierShifts_' + todayStr;
+                    const list = JSON.parse(localStorage.getItem(key) || '[]');
+                    const sStart = shiftData.shiftStart;
+                    const sEnd = shiftData.shiftEnd || now.toISOString();
+
+                    const alreadyExists = list.some(item => 
+                        (item.cashierName || '').toLowerCase() === cKey && item.shiftStartTime === sStart
+                    );
+                    if (!alreadyExists) {
+                        list.push({
+                            id: 'shift_' + Date.now(),
+                            cashierName: cName,
+                            openedBy: shiftData.openedBy || shiftData.cashierName || localStorage.getItem('shiftOpeningCashier') || cName,
+                            closedBy: shiftData.closedBy || currentLoggedInName,
+                            shiftStartTime: sStart,
+                            shiftEndTime: sEnd,
+                            closedAt: now.toISOString(),
+                            openingCash: shiftData.openingCash || Number(localStorage.getItem('shiftOpeningCash')) || 0,
+                            status: 'CLOSED',
+                            totalRev: shiftData.totalRev || 0,
+                            cashRev: shiftData.cashRev || 0,
+                            transferRev: shiftData.transferRev || 0,
+                            count: shiftData.count || 0
+                        });
+                        localStorage.setItem(key, JSON.stringify(list));
+                    }
+                } catch(e) {
+                    console.warn("Lỗi ghi nhận lịch sử kết ca:", e);
+                }
+
+                // Gửi cập nhật CLOSED lên Server DB
+                syncShiftClosedToServer(cName, shiftData.shiftStart, shiftData.shiftEnd, shiftData.closedBy || currentLoggedInName);
+            }
+
+            // Xóa ca khỏi registry đa ca activeCashierShifts_map
+            let map = {};
+            try { map = JSON.parse(localStorage.getItem('activeCashierShifts_map') || '{}') || {}; } catch(e) {}
+            delete map[cKey];
+            localStorage.setItem('activeCashierShifts_map', JSON.stringify(map));
+
+            // Chỉ xóa CHỌN LỌC các active key của thu ngân này, KHÔNG xóa ca của thu ngân khác
+            const userId = localStorage.getItem('userId');
+            const userEmail = localStorage.getItem('userEmail');
+            if (userId) localStorage.removeItem('activeCashierShift_' + userId);
+            if (userEmail) localStorage.removeItem('activeCashierShift_' + userEmail);
+            localStorage.removeItem('activeCashierShift_' + cKey);
+
+            // Kiểm tra xem activeCashierShift có thuộc về thu ngân này không
+            try {
+                const actRaw = localStorage.getItem('activeCashierShift');
+                if (actRaw) {
+                    const act = JSON.parse(actRaw);
+                    if ((act.cashierName || '').trim().toLowerCase() === cKey) {
+                        const remaining = Object.values(map);
+                        if (remaining.length > 0) {
+                            localStorage.setItem('activeCashierShift', JSON.stringify(remaining[0]));
+                        } else {
+                            localStorage.removeItem('activeCashierShift');
+                        }
+                    }
+                } else {
+                    localStorage.removeItem('activeCashierShift');
+                }
+            } catch(e) {
+                localStorage.removeItem('activeCashierShift');
+            }
+
+            // Chỉ dọn dẹp shiftOpening* nếu người mở ca là thu ngân này
+            const opCashier = (localStorage.getItem('shiftOpeningCashier') || '').trim().toLowerCase();
+            if (!opCashier || opCashier === cKey) {
+                const remaining = Object.values(map);
+                if (remaining.length > 0) {
+                    const nextAct = remaining[0];
+                    localStorage.setItem('shiftOpeningCash', nextAct.openingCash || 0);
+                    localStorage.setItem('shiftOpeningCashier', nextAct.cashierName || '');
+                    localStorage.setItem('shiftOpeningTime', nextAct.shiftStartTime || '');
+                } else {
+                    localStorage.removeItem('shiftOpeningCash');
+                    localStorage.removeItem('shiftOpeningCashier');
+                    localStorage.removeItem('shiftOpeningTime');
+                    localStorage.removeItem('shiftLoginTime');
+                    localStorage.removeItem('cashierLoginTime');
+                }
+            }
+
+            try {
+                const shiftBc = new BroadcastChannel('shift_sync_channel');
+                shiftBc.postMessage({
+                    type: 'SHIFT_CLOSED',
+                    cashierName: cName,
+                    closedBy: (shiftData && shiftData.closedBy) || currentLoggedInName,
+                    activeShiftsMap: map
+                });
+            } catch(e) {}
+
+            currentDrawerTotalCashPos = 0;
+            currentShiftCashRevenuePos = 0;
+            updateOpeningCashBadge(0, 0, 0);
+        }
+
+        async function checkCashierOpeningCashOnLoadPos() {
+            const roles = JSON.parse(localStorage.getItem('userRoles') || '[]');
+            const singleRole = localStorage.getItem('role') || localStorage.getItem('userRole') || '';
+            const allRoles = [...roles, singleRole];
+            const isCashier = allRoles.some(r => typeof r === 'string' && (r.toUpperCase().includes('ADMIN') || r.toUpperCase().includes('CASHIER')));
+            if (!isCashier) return;
+
+            let activeShift = getActiveCashierShift();
+            const pad = n => String(n).padStart(2, '0');
+            const now = new Date();
+            const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+
+            if (!activeShift) {
+                // Kiểm tra từ server DB xem có ca đang mở tại quầy hôm nay không
+                try {
+                    const custRes = await fetchWithAuth('/customers');
+                    const custList = (custRes && custRes.data) || [];
+                    const cName = getCashierDisplayName();
+                    const myKey = (cName || '').trim().toLowerCase();
+                    for (const c of custList) {
+                        if (c.phone && c.phone.startsWith('SH_') && c.fullName && c.fullName.startsWith('{')) {
+                            const shiftData = JSON.parse(c.fullName);
+                            const sName = (shiftData.c || '').trim().toLowerCase();
+                            if (shiftData.st === 'OPEN' && (!shiftData.d || shiftData.d === todayStr || (shiftData.s && shiftData.s.startsWith(todayStr)))) {
+                                if (sName === myKey || !activeShift) {
+                                    const restoredShift = {
+                                        id: 'server_' + (shiftData.s || c.phone),
+                                        openingCash: Number(shiftData.o) || 0,
+                                        shiftStartTime: shiftData.s,
+                                        cashierName: shiftData.c,
+                                        openedBy: shiftData.b || shiftData.c,
+                                        status: 'OPEN'
+                                    };
+                                    const restoredKey = (shiftData.c || '').trim().toLowerCase();
+                                    let map = {};
+                                    try { map = JSON.parse(localStorage.getItem('activeCashierShifts_map') || '{}') || {}; } catch(e) {}
+                                    map[restoredKey] = restoredShift;
+                                    localStorage.setItem('activeCashierShifts_map', JSON.stringify(map));
+                                    localStorage.setItem('activeCashierShift_' + restoredKey, JSON.stringify(restoredShift));
+                                    localStorage.setItem('activeCashierShift', JSON.stringify(restoredShift));
+                                    localStorage.setItem('shiftOpeningCash', restoredShift.openingCash);
+                                    localStorage.setItem('shiftOpeningCashier', restoredShift.cashierName);
+                                    localStorage.setItem('shiftOpeningTime', restoredShift.shiftStartTime);
+                                    activeShift = restoredShift;
+                                    if (sName === myKey) break;
+                                }
+                            }
+                        }
+                    }
+                } catch(e) {}
+            }
+
+            if (activeShift) {
+                // Đã mở ca trước đó -> Đồng bộ ngay số tiền két hiện tại
+                syncCurrentCashierDrawerCashPos();
+            } else {
+                // Lần đầu đăng nhập ca mới -> Lưu mốc giờ đăng nhập mới của ca này
+                const newLoginTimeIso = new Date().toISOString();
+                localStorage.setItem('cashierLoginTime', newLoginTimeIso);
+
+                // Nhắc thu ngân đếm tiền két và nhập
+                updateOpeningCashBadge(0, 0, 0);
+                setTimeout(() => {
+                    promptCashierOpeningCashModal(false);
+                }, 600);
+            }
+        }
+
+        window.promptCashierOpeningCashModal = async function(isManual = false) {
+            const roles = JSON.parse(localStorage.getItem('userRoles') || '[]');
+            const singleRole = localStorage.getItem('role') || localStorage.getItem('userRole') || '';
+            const allRoles = [...roles, singleRole];
+            const isCashier = allRoles.some(r => typeof r === 'string' && (r.toUpperCase().includes('ADMIN') || r.toUpperCase().includes('CASHIER')));
+            if (!isCashier) return;
+
+            const activeShift = getActiveCashierShift();
+            if (activeShift) {
+                // Đã mở ca -> Đồng bộ số tiền két mới nhất và hiển thị bảng chi tiết đối soát
+                await syncCurrentCashierDrawerCashPos();
+                const openingCash = Number(activeShift.openingCash) || 0;
+                const totalCash = currentDrawerTotalCashPos || openingCash;
+                const shiftCash = currentShiftCashRevenuePos || 0;
+                const openerName = (activeShift && activeShift.cashierName) || localStorage.getItem('shiftOpeningCashier') || '';
+                const currentLoggedInName = getCashierDisplayName();
+                const isDifferentUser = openerName && currentLoggedInName && (openerName.trim().toLowerCase() !== currentLoggedInName.trim().toLowerCase());
+
+                Swal.fire({
+                    icon: 'info',
+                    title: '<span style="color:#0f172a; font-weight:700;">Kiểm Tra Tiền Mặt Trong Két</span>',
+                    width: '480px',
+                    html: `
+                        <div style="text-align: left; font-size: 14px; line-height: 1.5;">
+                            ${isDifferentUser ? `
+                            <div style="background:#fef3c7; border:1px solid #fde68a; color:#92400e; padding:8px 12px; border-radius:8px; margin-bottom:12px; font-weight:600; font-size:13px;">
+                                <i class="fa fa-info-circle text-warning"></i> Ca làm việc này do <b>${escapeHtml(openerName)}</b> mở.<br>
+                                <span style="font-size:12px; font-weight:normal; color:#78350f;">Bạn đang đăng nhập: <b>${escapeHtml(currentLoggedInName)}</b> (Hệ thống tính chung két tại quầy)</span>
+                            </div>` : ''}
+                            <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 12px; margin-bottom: 12px;">
+                                <div style="font-size: 12.5px; color: #1e40af; margin-bottom: 8px;">
+                                    Thu ngân mở ca: <b>${escapeHtml(openerName || activeShift.cashierName)}</b><br>
+                                    Thời gian vào ca: <b>${new Date(activeShift.shiftStartTime).toLocaleString('vi-VN')}</b>
+                                </div>
+                                <div style="border-top: 1px dashed #93c5fd; padding-top: 8px; display: flex; justify-content: space-between; align-items: center;">
+                                    <span style="font-weight: 600; color: #1e3a8a;"><i class="fa fa-lock"></i> Vốn lót két đầu ca (A):</span>
+                                    <span style="font-weight: bold; color: #1d4ed8; font-size: 15px;">${openingCash.toLocaleString('vi-VN')} ₫</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 5px;">
+                                    <span style="font-weight: 600; color: #b45309;"><i class="fa fa-plus-circle"></i> Tiền mặt thu thêm trong ca (B):</span>
+                                    <span style="font-weight: bold; color: #d97706; font-size: 15px;">+${shiftCash.toLocaleString('vi-VN')} ₫</span>
+                                </div>
+                                <div style="border-top: 1px solid #93c5fd; padding-top: 8px; margin-top: 8px; display: flex; justify-content: space-between; align-items: center; background: #dbeafe; border-radius: 6px; padding: 6px 10px;">
+                                    <span style="font-weight: bold; color: #0f172a; font-size: 14px;">TỔNG TRONG KÉT HIỆN TẠI (A + B):</span>
+                                    <span style="font-weight: 800; color: #16a34a; font-size: 18px;">${totalCash.toLocaleString('vi-VN')} ₫</span>
+                                </div>
+                            </div>
+                            <p style="color: #475569; margin: 0; font-size: 12.5px;">
+                                <i class="fa fa-info-circle text-primary"></i> <b>Quy định đối soát:</b> Số tiền trên nút két luôn tự động cộng dồn doanh thu tiền mặt thu được trong ca vào vốn đầu ca để thu ngân dễ dàng kiểm đếm két thực tế bất cứ lúc nào.
+                            </p>
+                        </div>
+                    `,
+                    confirmButtonColor: '#d97706',
+                    confirmButtonText: '<i class="fa fa-check"></i> Đã hiểu'
+                });
+                return;
+            }
+
+            const currentCashierName = getCashierDisplayName();
+            const { value: openingCash } = await Swal.fire({
+                title: `<div style="font-size:20px; font-weight:bold; color:#d97706;"><i class="fa fa-money"></i> Kiểm Đếm Tiền Két Lúc Mở Ca</div>`,
+                width: '460px',
+                allowOutsideClick: true,
+                showCloseButton: true,
+                html: `
+                    <div style="text-align: left; font-size: 14px;">
+                        <p class="text-muted" style="margin-bottom:12px; line-height:1.45;">
+                            Chào thu ngân <b>${escapeHtml(currentCashierName)}</b>! Vui lòng kiểm tra két tiền và nhập <b>số tiền mặt hiện có trong két</b> lúc bắt đầu ca (tiền thối lót két) để hệ thống tự động đối soát và trừ tiền két khi kết ca.<br>
+                            <span style="color:#d97706; font-weight:600; font-size:12px;">* Lưu ý: Tiền két sau khi xác nhận sẽ được khóa cố định và không được sửa trong ca.</span>
+                        </p>
+                        <div style="margin-bottom:12px;">
+                            <label style="font-weight:bold; margin-bottom:5px; display:block; color:#1e293b;">Số tiền mặt trong két (VNĐ) *:</label>
+                            <input id="swal-opening-cash-input" type="text" class="form-control" style="font-size:18px; font-weight:bold; color:#d97706; padding:8px 12px; width:100%; border:1px solid #cbd5e1; border-radius:6px;" value="1.000.000" placeholder="Ví dụ: 1,000,000">
+                        </div>
+                        <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:4px;">
+                            <button type="button" class="btn btn-default btn-xs" style="padding:3px 8px; border:1px solid #ccc; background:#fff; border-radius:4px;" onclick="document.getElementById('swal-opening-cash-input').value = (500000).toLocaleString('vi-VN')">500.000 ₫</button>
+                            <button type="button" class="btn btn-default btn-xs" style="padding:3px 8px; border:1px solid #ccc; background:#fff; border-radius:4px;" onclick="document.getElementById('swal-opening-cash-input').value = (1000000).toLocaleString('vi-VN')">1.000.000 ₫</button>
+                            <button type="button" class="btn btn-default btn-xs" style="padding:3px 8px; border:1px solid #ccc; background:#fff; border-radius:4px;" onclick="document.getElementById('swal-opening-cash-input').value = (1500000).toLocaleString('vi-VN')">1.500.000 ₫</button>
+                            <button type="button" class="btn btn-default btn-xs" style="padding:3px 8px; border:1px solid #ccc; background:#fff; border-radius:4px;" onclick="document.getElementById('swal-opening-cash-input').value = (2000000).toLocaleString('vi-VN')">2.000.000 ₫</button>
+                            <button type="button" class="btn btn-default btn-xs" style="padding:3px 8px; border:1px solid #ccc; background:#fff; border-radius:4px;" onclick="document.getElementById('swal-opening-cash-input').value = '0'">0 ₫ (Két trống)</button>
+                        </div>
+                    </div>
+                `,
+                didOpen: () => {
+                    const inp = document.getElementById('swal-opening-cash-input');
+                    if (inp) {
+                        inp.focus();
+                        inp.select();
+                        inp.addEventListener('input', () => {
+                            const raw = inp.value.replace(/\D/g, '');
+                            inp.value = raw ? Number(raw).toLocaleString('vi-VN') : '';
+                        });
+                    }
+                },
+                showCancelButton: true,
+                confirmButtonText: '<i class="fa fa-lock"></i> Xác nhận & Khóa tiền két',
+                cancelButtonText: '<i class="fa fa-times"></i> Thoát',
+                confirmButtonColor: '#d97706',
+                cancelButtonColor: '#64748b',
+                preConfirm: () => {
+                    const inp = document.getElementById('swal-opening-cash-input');
+                    const raw = (inp ? inp.value : '').replace(/\D/g, '');
+                    if (raw === '') {
+                        Swal.showValidationMessage('Vui lòng nhập số tiền mặt trong két!');
+                        return false;
+                    }
+                    return parseInt(raw, 10);
+                }
+            });
+
+            if (openingCash !== undefined && openingCash !== null) {
+                const userId = localStorage.getItem('userId');
+                const userEmail = localStorage.getItem('userEmail');
+                const shiftStartIso = new Date().toISOString();
+                localStorage.setItem('cashierLoginTime', shiftStartIso);
+                const newShift = {
+                    id: 'shift_' + Date.now(),
+                    openingCash: openingCash,
+                    shiftStartTime: shiftStartIso,
+                    cashierName: currentCashierName,
+                    openedBy: currentCashierName,
+                    cashierId: userId,
+                    status: 'OPEN'
+                };
+
+                const myKey = currentCashierName.trim().toLowerCase();
+
+                // Lưu vào registry đa ca làm việc
+                let map = {};
+                try { map = JSON.parse(localStorage.getItem('activeCashierShifts_map') || '{}') || {}; } catch(e) {}
+                map[myKey] = newShift;
+                localStorage.setItem('activeCashierShifts_map', JSON.stringify(map));
+
+                if (userId) localStorage.setItem('activeCashierShift_' + userId, JSON.stringify(newShift));
+                if (userEmail) localStorage.setItem('activeCashierShift_' + userEmail, JSON.stringify(newShift));
+                localStorage.setItem('activeCashierShift_' + myKey, JSON.stringify(newShift));
+                localStorage.setItem('activeCashierShift', JSON.stringify(newShift));
+                localStorage.setItem('shiftOpeningCash', openingCash);
+                localStorage.setItem('shiftOpeningCashier', currentCashierName);
+                localStorage.setItem('shiftOpeningTime', shiftStartIso);
+                localStorage.setItem('shiftLoginTime', shiftStartIso);
+
+                try {
+                    const shiftBc = new BroadcastChannel('shift_sync_channel');
+                    shiftBc.postMessage({ type: 'SHIFT_OPENED', shift: newShift, cashierName: currentCashierName, openingCash: openingCash, shiftStartTime: shiftStartIso, activeShiftsMap: map });
+                } catch(e) {}
+
+                updateOpeningCashBadge(openingCash, openingCash, 0);
+                await syncCurrentCashierDrawerCashPos();
+                syncShiftToServer(newShift);
+
+                Swal.fire({
+                    toast: true,
+                    position: 'top-end',
+                    icon: 'success',
+                    title: `Đã mở ca & khóa tiền két: ${Number(openingCash).toLocaleString('vi-VN')} ₫`,
+                    showConfirmButton: false,
+                    timer: 2500
+                });
+            }
+        };
+
+        window.openCashierShiftModal = async function() {
+            const roles = JSON.parse(localStorage.getItem('userRoles') || '[]');
+            const isCashier = roles.some(r => typeof r === 'string' && (r.toUpperCase().includes('ADMIN') || r.toUpperCase().includes('CASHIER')));
+            if (!isCashier) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Từ chối quyền hạn',
+                    text: 'Nhân viên order chỉ làm nhiệm vụ gọi món. Chức năng kết ca & báo cáo doanh thu chỉ dành cho Thu ngân trực ca!',
+                    confirmButtonColor: '#d10024'
+                });
+                return;
+            }
+
+            let activeShift = getActiveCashierShift();
+            if (!activeShift) {
+                await promptCashierOpeningCashModal(false);
+                activeShift = getActiveCashierShift();
+                if (!activeShift) return;
+            }
+
+            const currentCashierName = getCashierDisplayName();
+            const pad = n => String(n).padStart(2, '0');
+            const formatDtLocal = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+
+            let shiftStartDate = new Date(activeShift.shiftStartTime);
+            const now = new Date();
+
+            // Mở rộng mốc bắt đầu nếu có hóa đơn của ca này phát sinh sau ca đóng gần nhất
+            try {
+                const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+                const closedList = JSON.parse(localStorage.getItem('closedCashierShifts_' + todayStr) || '[]');
+                let lastClosedTime = new Date(`${todayStr}T00:00:00`).getTime();
+                closedList.forEach(cs => {
+                    if ((cs.cashierName || '').trim().toLowerCase() === currentCashierName.trim().toLowerCase()) {
+                        const ct = new Date(cs.shiftEndTime || cs.closedAt || cs.shiftStartTime).getTime();
+                        if (ct > lastClosedTime) lastClosedTime = ct;
+                    }
+                });
+
+                const allInvoicesRes = await fetchWithAuth('/invoices/all');
+                const allInvList = allInvoicesRes.data || [];
+                allInvList.forEach(inv => {
+                    if (inv.status !== 'PAID') return;
+                    const cName = (inv.cashierName || '').trim().toLowerCase();
+                    const myName = currentCashierName.trim().toLowerCase();
+                    if (cName === myName || (!inv.cashierName && roles.some(r => typeof r === 'string' && r.toUpperCase().includes('ADMIN')))) {
+                        const pt = new Date(inv.paidAt || inv.issuedAt || inv.createdAt).getTime();
+                        if (pt >= lastClosedTime && pt < shiftStartDate.getTime()) {
+                            shiftStartDate = new Date(pt);
+                        }
+                    }
+                });
+            } catch(e) {}
+
+            const defaultStart = formatDtLocal(shiftStartDate);
+            const defaultEnd = formatDtLocal(now);
+            const openingCash = activeShift.openingCash || 0;
+
+            async function calculateShiftData(startTime, endTime) {
+                try {
+                    const res = await fetchWithAuth('/invoices/all');
+                    const allInvoices = res.data || [];
+                    const startD = new Date(startTime).getTime();
+                    // Đảm bảo tính trọn vẹn cả phút kết ca và thời điểm hiện tại để thanh toán vừa xong hiện NGAY LẬP TỨC
+                    const endDt = new Date(endTime);
+                    endDt.setSeconds(59, 999);
+                    const endD = Math.max(endDt.getTime(), Date.now());
+
+                    const shiftInvoices = allInvoices.filter(inv => {
+                        if (inv.status !== 'PAID') return false;
+                        const payTime = new Date(inv.paidAt || inv.issuedAt || inv.createdAt).getTime();
+                        if (isNaN(payTime)) return false;
+                        if (payTime < startD || payTime > endD) return false;
+                        // Tính toàn bộ hóa đơn phát sinh trong khung giờ ca mở tại quầy (dù là Thu ngân hay Admin bấm thanh toán phụ)
+                        return true;
+                    });
+
+                    let totalRev = 0;
+                    let cashRev = 0;
+                    let transferRev = 0;
+                    shiftInvoices.forEach(inv => {
+                        const amt = Number(inv.totalAmount || inv.finalAmount || 0);
+                        totalRev += amt;
+                        const pm = (inv.paymentMethod || '').toLowerCase();
+                        if (pm.includes('tiền mặt') || pm.includes('cash')) cashRev += amt;
+                        else transferRev += amt;
+                    });
+
+                    return {
+                        invoices: shiftInvoices,
+                        totalRev,
+                        cashRev,
+                        transferRev,
+                        count: shiftInvoices.length
+                    };
+                } catch(e) {
+                    return { invoices: [], totalRev: 0, cashRev: 0, transferRev: 0, count: 0 };
+                }
+            }
+
+            let initialData = await calculateShiftData(defaultStart, defaultEnd);
+            currentShiftCashRevenuePos = initialData.cashRev || 0;
+            currentDrawerTotalCashPos = openingCash + currentShiftCashRevenuePos;
+            updateOpeningCashBadge(currentDrawerTotalCashPos, openingCash, currentShiftCashRevenuePos);
+
+            const openerName = (activeShift && activeShift.cashierName) || localStorage.getItem('shiftOpeningCashier') || currentCashierName;
+            const isDifferentUser = openerName && currentCashierName && (openerName.trim().toLowerCase() !== currentCashierName.trim().toLowerCase());
+
+            const { isConfirmed } = await Swal.fire({
+                title: `<div style="font-size:20px; font-weight:bold; color:#0284c7;"><i class="fa fa-file-text-o"></i> Báo Cáo Doanh Thu Ca - Thu Ngân</div>`,
+                width: '500px',
+                html: `
+                    <div style="text-align: left; font-size: 14px;">
+                        <div style="background: #e0f2fe; border: 1px solid #7dd3fc; border-radius: 8px; padding: 10px; margin-bottom: 12px;">
+                            <div style="font-weight:bold; color:#0369a1;">
+                                Thu ngân trực ca: <b>${escapeHtml(openerName)}</b>
+                                ${isDifferentUser ? `<br><small class="text-danger" style="font-weight:600;"><i class="fa fa-user-circle"></i> Người đang thao tác kết ca: <b>${escapeHtml(currentCashierName)}</b></small>` : ''}
+                            </div>
+                            <div style="font-size:12px; color:#555;">Báo cáo tổng kết ca làm việc từ lúc vào ca đến lúc ra ca / kết ca.</div>
+                        </div>
+
+                        <div class="row g-2 mb-2" style="display:flex; gap:10px;">
+                            <div style="flex:1;">
+                                <label style="font-weight:bold; margin-bottom:4px; display:block; color:#1e293b;">
+                                    <i class="fa fa-lock text-muted"></i> Giờ vào ca (Bắt đầu):
+                                </label>
+                                <input id="swal-shift-start" type="datetime-local" class="form-control" value="${defaultStart}" readonly disabled style="width:100%; padding:8px; border:1px solid #cbd5e1; border-radius:6px; font-size:14px; background:#f1f5f9; cursor:not-allowed;">
+                                <small class="text-muted" style="font-size:11px;">* Cố định theo thời gian mở ca đầu tiên</small>
+                            </div>
+                            <div style="flex:1;">
+                                <label style="font-weight:bold; margin-bottom:4px; display:block; color:#1e293b;">
+                                    <i class="fa fa-clock-o text-success"></i> Giờ kết ca (Ra ca):
+                                </label>
+                                <div style="font-size:13px; font-weight:bold; color:#16a34a; padding:7px 10px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px;">
+                                    <i class="fa fa-bolt"></i> Tới bây giờ (${pad(now.getHours())}:${pad(now.getMinutes())})
+                                </div>
+                                <small class="text-muted" style="font-size:11px;">* Sẽ chốt mốc giờ này khi bấm kết thúc ca</small>
+                            </div>
+                        </div>
+
+                        <div id="swal-shift-summary-box" style="margin-top:14px; background:#f8fafc; border:1px dashed #94a3b8; border-radius:8px; padding:12px;">
+                            <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+                                <span>Số hóa đơn đã thu:</span>
+                                <strong id="swal-shift-count">${initialData.count} HĐ</strong>
+                            </div>
+                            <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+                                <span>Tiền mặt trong két lúc mở ca (A):</span>
+                                <div>
+                                    <strong id="swal-shift-opening" style="color:#0284c7;">${openingCash.toLocaleString('vi-VN')} ₫</strong>
+                                    <small class="text-muted" style="font-size:11px; margin-left:4px;">(Đã chốt)</small>
+                                </div>
+                            </div>
+                            <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+                                <span>Doanh thu Tiền mặt thu trong ca (B):</span>
+                                <strong id="swal-shift-cash" style="color:#d97706;">${initialData.cashRev.toLocaleString('vi-VN')} ₫</strong>
+                            </div>
+                            <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+                                <span>Doanh thu Chuyển khoản / QR:</span>
+                                <strong id="swal-shift-transfer" style="color:#2563eb;">${initialData.transferRev.toLocaleString('vi-VN')} ₫</strong>
+                            </div>
+                            <div style="display:flex; justify-content:space-between; border-top:1px dashed #cbd5e1; padding-top:6px; margin-top:6px;">
+                                <span>TỔNG TIỀN MẶT TRONG KÉT (A + B):</span>
+                                <strong id="swal-shift-drawer" style="color:#0f172a; font-size:15px;">${(openingCash + initialData.cashRev).toLocaleString('vi-VN')} ₫</strong>
+                            </div>
+                            <div style="display:flex; justify-content:space-between; background:#fef3c7; border:1px solid #fde68a; border-radius:6px; padding:6px 8px; margin-top:6px;">
+                                <div>
+                                    <span style="font-weight:bold; color:#92400e;">TIỀN MẶT BÀN GIAO NỘP QUỸ (B):</span><br>
+                                    <small style="color:#78350f; font-size:11px;">(Đã trừ ${openingCash.toLocaleString('vi-VN')} ₫ tiền két giữ lại làm vốn ca sau)</small>
+                                </div>
+                                <strong id="swal-shift-handover" style="color:#b45309; font-size:16px;">${initialData.cashRev.toLocaleString('vi-VN')} ₫</strong>
+                            </div>
+                            <div style="display:flex; justify-content:space-between; border-top:1px solid #cbd5e1; padding-top:6px; margin-top:8px; font-size:16px;">
+                                <strong>TỔNG DOANH THU CA:</strong>
+                                <strong id="swal-shift-total" style="color:#16a34a;">${initialData.totalRev.toLocaleString('vi-VN')} ₫</strong>
+                            </div>
+                        </div>
+
+                        <div style="margin-top:12px;">
+                            <button type="button" class="btn btn-default btn-xs" onclick="const el = document.getElementById('swal-shift-orders-table-wrapper-pos'); el.style.display = el.style.display === 'none' ? 'block' : 'none';" style="width:100%; padding:6px; font-weight:600; color:#0284c7; border:1px dashed #0284c7; background:#f0f9ff; border-radius:6px;">
+                                <i class="fa fa-list me-1"></i> Xem danh sách ${initialData.count} đơn hàng trong ca (Bấm xem/đóng)
+                            </button>
+                            <div id="swal-shift-orders-table-wrapper-pos" style="display:none; max-height:160px; overflow-y:auto; margin-top:8px; border:1px solid #e2e8f0; border-radius:6px; font-size:12px; background:#fff;">
+                                <table style="width:100%; border-collapse:collapse;">
+                                    <thead style="background:#f1f5f9; position:sticky; top:0;">
+                                        <tr>
+                                            <th style="padding:5px 6px; text-align:left;">Mã HĐ</th>
+                                            <th style="padding:5px 6px; text-align:left;">Bàn</th>
+                                            <th style="padding:5px 6px; text-align:center;">Giờ TT</th>
+                                            <th style="padding:5px 6px; text-align:right;">Thực thu</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${initialData.invoices.map(inv => `
+                                            <tr style="border-bottom:1px solid #f1f5f9;">
+                                                <td style="padding:4px 6px; font-weight:bold; color:#0284c7;">#${inv.invoiceCode || inv.id}</td>
+                                                <td style="padding:4px 6px;">${escapeHtml(inv.tableName || 'Bàn ' + (inv.tableId || '-'))}</td>
+                                                <td style="padding:4px 6px; text-align:center; color:#666;">${new Date(inv.paidAt || inv.issuedAt || inv.createdAt).toLocaleTimeString('vi-VN', {hour:'2-digit', minute:'2-digit'})}</td>
+                                                <td style="padding:4px 6px; text-align:right; font-weight:bold; color:#16a34a;">${Number(inv.finalAmount || inv.totalAmount || 0).toLocaleString('vi-VN')} ₫</td>
+                                            </tr>
+                                        `).join('') || '<tr><td colspan="4" style="text-align:center; padding:8px; color:#888;">Chưa có đơn hàng thanh toán</td></tr>'}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                `,
+                showCancelButton: true,
+                confirmButtonText: '<i class="fa fa-print"></i> In Phiếu & Kết Thúc Ca',
+                cancelButtonText: 'Đóng',
+                confirmButtonColor: '#0284c7'
+            });
+
+            if (isConfirmed) {
+                const closeNow = new Date();
+                const effectiveEnd = formatDtLocal(closeNow);
+
+                // 1. In phiếu báo cáo kết ca (ghi rõ Thu ngân trực ca và Người xác nhận kết ca)
+                window.printThermalCashierShiftReceipt({
+                    cashierName: openerName,
+                    openerName: openerName,
+                    closerName: currentCashierName,
+                    shiftStart: defaultStart,
+                    shiftEnd: effectiveEnd,
+                    openingCash: openingCash,
+                    count: initialData.count,
+                    cashRev: initialData.cashRev,
+                    transferRev: initialData.transferRev,
+                    totalRev: initialData.totalRev,
+                    invoices: initialData.invoices
+                });
+
+                // 2. KẾT CA LUÔN: Lưu lịch sử ca đã kết thúc và giải phóng ca làm việc
+                closeCashierShift({
+                    cashierName: openerName,
+                    openedBy: openerName,
+                    closedBy: currentCashierName,
+                    shiftStart: defaultStart,
+                    shiftEnd: effectiveEnd,
+                    openingCash: openingCash,
+                    totalRev: initialData.totalRev,
+                    cashRev: initialData.cashRev,
+                    transferRev: initialData.transferRev,
+                    count: initialData.count
+                });
+
+                // 3. Thông báo hoàn tất kết ca và TỰ ĐỘNG ĐĂNG XUẤT LUÔN
+                setTimeout(() => {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Đã hoàn tất kết ca thành công!',
+                        html: `
+                            <div style="text-align: left; font-size: 14px;">
+                                <p>Ca làm việc của thu ngân <b>${escapeHtml(openerName)}</b> đã được kết thúc bởi <b>${escapeHtml(currentCashierName)}</b> và in phiếu bàn giao quỹ.</p>
+                                <div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; padding:10px; margin:10px 0; color:#166534;">
+                                    <div>💵 Tiền mặt bàn giao nộp quỹ: <b>${initialData.cashRev.toLocaleString('vi-VN')} ₫</b></div>
+                                    <div>💳 Chuyển khoản / QR: <b>${initialData.transferRev.toLocaleString('vi-VN')} ₫</b></div>
+                                    <div style="border-top:1px dashed #bbf7d0; margin-top:5px; padding-top:5px; font-weight:bold;">
+                                        📈 Tổng thực thu ca: ${initialData.totalRev.toLocaleString('vi-VN')} ₫
+                                    </div>
+                                </div>
+                                <p class="text-danger font-weight-bold" style="font-size:13.5px; text-align:center; margin-bottom:0;">
+                                    <i class="fa fa-sign-out"></i> Đang tự động đăng xuất... Vui lòng đăng nhập lại để mở ca mới!
+                                </p>
+                            </div>
+                        `,
+                        timer: 2200,
+                        timerProgressBar: true,
+                        showConfirmButton: true,
+                        confirmButtonColor: '#d33',
+                        confirmButtonText: '<i class="fa fa-sign-out"></i> Đăng xuất ngay'
+                    }).then(() => {
+                        const authKeys = ['token', 'userRole', 'userRoles', 'role', 'userEmail', 'userId', 'userFullName', 'userName'];
+                        authKeys.forEach(k => localStorage.removeItem(k));
+                        window.location.href = '/login';
+                    });
+                }, 600);
+            }
+        };
+
+        window.printThermalCashierShiftReceipt = function(data) {
+            const printTime = new Date().toLocaleString('vi-VN');
+            const startStr = data.shiftStart ? new Date(data.shiftStart).toLocaleString('vi-VN') : '-';
+            const endStr = data.shiftEnd ? new Date(data.shiftEnd).toLocaleString('vi-VN') : '-';
+            const openerName = data.openerName || data.cashierName || 'Thu ngân';
+            const closerName = data.closerName || getCashierDisplayName();
+            const isDifferentUser = closerName && openerName && (closerName.trim().toLowerCase() !== openerName.trim().toLowerCase());
+            const invoices = (data.invoices || []).slice(0, 20);
+
+            let invoicesHtml = invoices.map(inv => {
+                const timeStr = new Date(inv.issuedAt || inv.createdAt || inv.paidAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+                const tbl = inv.tableName || ('Bàn #' + (inv.tableId || '-'));
+                const orderStaff = inv.orderStaffName ? ` (Order: ${escapeHtml(inv.orderStaffName)})` : '';
+                return `
+                    <tr style="border-bottom: 1px dashed #eee; font-size: 11px;">
+                        <td style="padding: 3px 2px; text-align: left;">
+                            #${inv.invoiceCode || inv.id} - ${tbl}<br>
+                            <small style="color: #666;">${timeStr}${orderStaff}</small>
+                        </td>
+                        <td style="padding: 3px 2px; text-align: right; font-weight: bold; vertical-align: middle;">
+                            ${Number(inv.totalAmount || inv.finalAmount || 0).toLocaleString('vi-VN')} ₫
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+
+            const html = `
+                <!DOCTYPE html>
+                <html>
+                    <head>
+                        <meta charset="utf-8">
+                        <title>Báo Cáo Kết Ca - ${escapeHtml(openerName)}</title>
+                        <style>
+                            @page { margin: 0; size: auto; }
+                            body {
+                                font-family: 'Courier New', Courier, monospace, sans-serif;
+                                padding: 15px;
+                                width: 320px;
+                                margin: 0 auto;
+                                color: #000;
+                                font-size: 13px;
+                                line-height: 1.35;
+                                background: #fff;
+                            }
+                            .text-center { text-align: center; }
+                            .text-right { text-align: right; }
+                            .text-left { text-align: left; }
+                            .header { text-align: center; margin-bottom: 8px; }
+                            .brand-name { font-size: 18px; font-weight: 900; margin: 0; text-transform: uppercase; }
+                            .brand-sub { font-size: 11px; margin: 3px 0 6px 0; color: #222; }
+                            .title-box {
+                                border-top: 1px dashed #000;
+                                border-bottom: 1px dashed #000;
+                                padding: 6px 0;
+                                margin: 6px 0;
+                            }
+                            .bill-title { font-size: 16px; font-weight: 900; letter-spacing: 0.5px; margin: 0; text-transform: uppercase; }
+                            .bill-notice { font-size: 11px; color: #333; margin: 2px 0 0 0; }
+                            .meta-info { margin: 8px 0; font-size: 12px; text-align: left; }
+                            .meta-info p { margin: 3px 0; }
+                            .section-title {
+                                font-size: 12px;
+                                font-weight: 900;
+                                border-top: 1px dashed #000;
+                                padding-top: 5px;
+                                margin: 8px 0 4px 0;
+                                text-transform: uppercase;
+                            }
+                            table { width: 100%; border-collapse: collapse; margin-top: 4px; font-size: 12px; }
+                            th { border-top: 1px solid #000; border-bottom: 1px solid #000; padding: 4px 2px; }
+                            td { padding: 3px 2px; }
+                            .total-box { margin-top: 6px; border-top: 1px dashed #000; padding-top: 6px; }
+                            .total-row { display: flex; justify-content: space-between; margin: 3px 0; font-size: 13px; }
+                            .grand-total { font-size: 16px; font-weight: 900; border-top: 1px solid #000; padding-top: 6px; margin-top: 6px; }
+                            .footer { text-align: center; margin-top: 12px; border-top: 1px dashed #000; padding-top: 8px; font-size: 11px; }
+                        </style>
+                    </head>
+                    <body>
+                        <div class="header">
+                            <div class="brand-name">🍽️ NHÀ HÀNG THANH HÓA</div>
+                            <div class="brand-sub">Đ/c: TP. Thanh Hóa • Hotline: 0988888888</div>
+                            <div class="title-box">
+                                <div class="bill-title">BÁO CÁO DOANH THU CA</div>
+                                <div class="bill-notice">(PHIẾU BÀN GIAO KẾT CA THU NGÂN)</div>
+                            </div>
+                        </div>
+
+                        <div class="meta-info">
+                            <p><strong>Thu ngân trực ca:</strong> <span style="font-size: 14px; font-weight: 900;">${escapeHtml(openerName)}</span></p>
+                            <p><strong>Người xác nhận kết ca:</strong> <span style="font-weight: 700;">${escapeHtml(closerName)}${isDifferentUser ? ' (Thao tác đóng ca)' : ''}</span></p>
+                            <p><strong>Giờ vào ca:</strong> ${escapeHtml(startStr)}</p>
+                            <p><strong>Giờ kết ca:</strong> ${escapeHtml(endStr)}</p>
+                            <p><strong>Giờ in phiếu:</strong> ${escapeHtml(printTime)}</p>
+                            <p><strong>Số HĐ đã thanh toán:</strong> ${data.count} hóa đơn</p>
+                        </div>
+
+                        <div class="total-box">
+                            <div class="total-row grand-total">
+                                <span>TỔNG THỰC THU CA:</span>
+                                <span>${Number(data.totalRev).toLocaleString('vi-VN')} ₫</span>
+                            </div>
+                        </div>
+
+                        <div class="section-title">1. ĐỐI SOÁT TIỀN KÉT & DOANH THU CA</div>
+                        <div style="display:flex; justify-content:space-between; margin:3px 0; font-size:12px;">
+                            <span>• Tiền mặt trong két lúc mở ca (A):</span>
+                            <strong style="color:#0284c7;">${Number(data.openingCash || 0).toLocaleString('vi-VN')} ₫</strong>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; margin:3px 0; font-size:12px;">
+                            <span>• Doanh thu Tiền mặt thu trong ca (B):</span>
+                            <strong style="color:#d97706;">${Number(data.cashRev).toLocaleString('vi-VN')} ₫</strong>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; margin:3px 0; font-size:12px;">
+                            <span>• Doanh thu Chuyển khoản / QR:</span>
+                            <strong style="color:#2563eb;">${Number(data.transferRev).toLocaleString('vi-VN')} ₫</strong>
+                        </div>
+                        <div style="border-top:1px dashed #000; margin: 4px 0;"></div>
+                        <div style="display:flex; justify-content:space-between; margin:3px 0; font-size:12.5px;">
+                            <span>• TỔNG TIỀN MẶT TRONG KÉT (A + B):</span>
+                            <strong style="font-weight:900;">${(Number(data.openingCash || 0) + Number(data.cashRev)).toLocaleString('vi-VN')} ₫</strong>
+                        </div>
+                        <div style="background: #f8f9fa; border: 1px solid #000; padding: 5px; margin-top: 6px; font-size: 12px;">
+                            <strong>💵 TIỀN MẶT BÀN GIAO NỘP QUỸ (B):</strong>
+                            <span style="float: right; font-weight: 900; font-size: 14px;">${Number(data.cashRev).toLocaleString('vi-VN')} ₫</span>
+                            <div style="clear:both; font-size:10px; color:#555; margin-top:2px;">*(Đã trừ ${Number(data.openingCash || 0).toLocaleString('vi-VN')} ₫ tiền két giữ lại làm vốn ca sau)*</div>
+                        </div>
+
+                        ${invoicesHtml ? `
+                        <div class="section-title">2. HÓA ĐƠN TRONG CA (${invoices.length} HĐ gần nhất)</div>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th class="text-left">Mã HĐ / Bàn / Giờ</th>
+                                    <th class="text-right" style="width: 90px;">Tiền TT</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${invoicesHtml}
+                            </tbody>
+                        </table>
+                        ` : ''}
+
+                        <div style="margin-top: 18px; border-top: 1px dashed #000; padding-top: 10px; display: flex; justify-content: space-between; text-align: center; font-size: 11px;">
+                            <div style="width: 48%;">
+                                <strong>THU NGÂN TRỰC CA</strong><br>
+                                <em>(Ký & ghi họ tên)</em>
+                                <br><br><br>
+                                <strong>${escapeHtml(openerName)}</strong>
+                            </div>
+                            <div style="width: 48%;">
+                                <strong>NGƯỜI XÁC NHẬN KẾT CA</strong><br>
+                                <em>(Ký & ghi họ tên)</em>
+                                <br><br><br>
+                                <strong>${escapeHtml(closerName)}</strong>
+                            </div>
+                        </div>
+
+                        <div class="footer">
+                            <p style="margin: 3px 0; font-weight: bold; font-size: 11px;">*** BÁO CÁO KẾT CA THU NGÂN ***</p>
+                            <p style="margin: 2px 0;">Phần mềm Quản lý Nhà hàng Thanh Hóa</p>
+                        </div>
+                    </body>
+                </html>
+            `;
+
+            const printWin = window.open('', '', 'height=680,width=420');
+            if (printWin) {
+                printWin.document.write(html);
+                printWin.document.close();
+                printWin.focus();
+                setTimeout(() => {
+                    printWin.print();
+                    printWin.close();
+                }, 500);
+            } else {
+                alert("Vui lòng cho phép popup để in phiếu kết ca!");
+            }
+        };
+
         let previousOrderStatuses = {};
-        document.addEventListener('DOMContentLoaded', () => {
+        function initPosTables() {
             setupAuthUI();
             loadTables();
+            checkCashierOpeningCashOnLoadPos();
+            syncCurrentCashierDrawerCashPos();
+            setInterval(syncCurrentCashierDrawerCashPos, 4000);
+
+            try {
+                const shiftBc = new BroadcastChannel('shift_sync_channel');
+                shiftBc.onmessage = (event) => {
+                    if (event && event.data) {
+                        if (event.data.activeShiftsMap) {
+                            try {
+                                localStorage.setItem('activeCashierShifts_map', JSON.stringify(event.data.activeShiftsMap));
+                            } catch(e) {}
+                        }
+                        if (event.data.type === 'SHIFT_CLOSED') {
+                            performLocalShiftClosePos({
+                                c: event.data.cashierName,
+                                cb: event.data.closedBy,
+                                st: 'CLOSED'
+                            });
+                        } else if (event.data.type === 'SHIFT_OPENED') {
+                            syncCurrentCashierDrawerCashPos();
+                        }
+                    }
+                };
+            } catch(e) {}
 
             const posPhoneInput = document.getElementById('customerPhone');
             if (posPhoneInput) {
@@ -1870,7 +3162,13 @@
                     loadTables();
                 } catch(e) {}
             }, 5000);
-        });
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initPosTables);
+        } else {
+            initPosTables();
+        }
     </script>
 </body>
 </html>

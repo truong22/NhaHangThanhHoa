@@ -877,6 +877,7 @@
                 <span id="current-table-label">Đang tải bàn...</span>
                 <i class="fa fa-chevron-down" style="font-size: 11px; margin-left: 4px;"></i>
             </div>
+            <span id="order-staff-badge" style="display:none; font-size:12px; font-weight:600; padding:4px 8px; border-radius:6px; background:#383846; color:#93c5fd; height:32px; align-items:center; gap:4px;" title="Nhân viên đã lên đơn cho bàn này"><i class="fa fa-user-circle"></i> <span id="order-staff-name">-</span></span>
             <span id="order-kitchen-status-badge" style="display:none; font-size:12px; font-weight:bold; padding:4px 10px; border-radius:6px; margin-left:6px; align-items:center; gap:4px; height:32px;"></span>
             <button id="current-customer-btn" onclick="openCustomerInfoModalInOrder()" class="btn-header-action" style="display:none; background: #0284c7; color: #fff; font-weight: 600; padding: 4px 12px; border-radius: 6px; cursor: pointer; align-items: center; gap: 6px; height: 32px; border: 1px solid #38bdf8;" title="Nhấn để xem và sửa thông tin khách đang ăn">
                 <i class="fa fa-user"></i>
@@ -889,7 +890,15 @@
             </div>
         </div>
 
-        <div class="header-right">
+        <div class="header-right" style="display: flex; align-items: center; gap: 8px;">
+            <button class="btn-header-action" id="btn-cashier-opening-cash" onclick="promptCashierOpeningCashModal(true)" title="Tiền mặt trong két (Vốn đầu ca + Tiền mặt thu được)" style="background: #d97706; color: #fff; font-weight: 600; padding: 4px 12px; border-radius: 6px; cursor: pointer; display: none; align-items: center; gap: 6px; height: 32px; border: 1px solid #f59e0b;">
+                <i class="fa fa-money-bill-wave"></i>
+                <span>Két: <b id="headerOpeningCashText">0 ₫</b></span>
+            </button>
+            <button class="btn-header-action" id="btn-cashier-shift-report" onclick="openCashierShiftModal()" title="Báo cáo doanh thu kết ca thu ngân" style="background: #0284c7; color: #fff; font-weight: 600; padding: 4px 12px; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; height: 32px; border: 1px solid #38bdf8;">
+                <i class="fa fa-receipt"></i>
+                <span>Kết ca</span>
+            </button>
             <span id="auth-email-badge" style="font-size: 12px; color: #aaa; margin-right: 6px;"></span>
             <button class="btn-header-action" onclick="logout(event)" title="Đăng xuất">
                 <i class="fa fa-sign-out-alt"></i>
@@ -1117,6 +1126,6 @@
     <script src="js/jquery.min.js"></script>
     <script src="js/bootstrap.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-    <script src="order-app.js?v=2.1"></script>
+    <script src="order-app.js?v=3.5"></script>
 </body>
 </html>
