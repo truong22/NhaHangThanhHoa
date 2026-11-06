@@ -117,6 +117,15 @@
         background: #cbd5e1;
       }
     }
+
+    /* ================= MULTI-MODAL STACKING ================= */
+    /* Đảm bảo khi mở xem chi tiết hóa đơn từ modal ca làm việc, modal chi tiết hóa đơn luôn nổi lên trên cùng */
+    #invoiceDetailsModal {
+      z-index: 1065 !important;
+    }
+    .modal-backdrop.stacked-backdrop {
+      z-index: 1060 !important;
+    }
   </style>
 </head>
 
@@ -1363,7 +1372,7 @@
 </div>
 
 <!-- 6. Modal Invoice Details & Print Receipt -->
-<div class="modal fade" id="invoiceDetailsModal" tabindex="-1" aria-hidden="true">
+<div class="modal fade" id="invoiceDetailsModal" tabindex="-1" aria-hidden="true" style="z-index: 1065;">
   <div class="modal-dialog modal-lg">
     <div class="modal-content">
       <div class="modal-header bg-gradient-success text-white">
@@ -1550,7 +1559,7 @@
 <!-- SweetAlert2 library -->
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <!-- Admin App JavaScript -->
-<script src="assets/js/admin-app.js?v=3.3"></script>
+<script src="assets/js/admin-app.js?v=3.4"></script>
 
 </body>
 </html>

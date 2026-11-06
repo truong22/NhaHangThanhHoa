@@ -115,9 +115,9 @@ async function loadInitialData() {
         }
         
         if (!currentTable) {
-            alert("Vui lòng chọn Bàn trước khi gọi món! Hệ thống chuyển bạn về Sơ đồ bàn...");
-            window.location.href = "/pos-tables";
-            return;
+            // Cho phép xem thực đơn món ăn bình thường (chế độ chỉ xem) thay vì đá người dùng ra
+            currentTable = { id: 0, tableName: 'Thực đơn món ăn' };
+            updateTableLabel();
         }
 
         // Cập nhật URL sạch đẹp
@@ -126,6 +126,9 @@ async function loadInitialData() {
         }
 
         window.applyFilters();
+        if (typeof updateOrderShiftBanner === 'function') {
+            updateOrderShiftBanner();
+        }
     } catch (err) {
         console.error("Error loading data", err);
     }
@@ -538,15 +541,48 @@ window.onSearchInput = function(val) {
     window.applyFilters();
 };
 
+window.showOutOfStockAlert = function(productName) {
+    Swal.fire({
+        icon: 'warning',
+        title: 'Món đã hết hàng!',
+        html: `Món <b>[${escapeHtml(productName)}]</b> hiện đã chuyển sang trạng thái <b>Hết hàng</b>.<br>Vui lòng chọn món khác trong thực đơn!`,
+        confirmButtonColor: '#d10024',
+        confirmButtonText: 'Đã hiểu'
+    });
+};
+
+window.reloadProductsMenu = async function() {
+    try {
+        const prodRes = await fetchWithAuth('/products/all');
+        if (prodRes && prodRes.data) {
+            productsData = prodRes.data || [];
+            window.applyFilters();
+        }
+    } catch(e) {}
+};
+
+try {
+    const menuBc = new BroadcastChannel('restaurant_menu_sync');
+    menuBc.onmessage = (event) => {
+        if (event && event.data && event.data.type === 'PRODUCTS_UPDATED') {
+            window.reloadProductsMenu();
+        }
+    };
+} catch(e) {}
+
 window.applyFilters = function() {
     const keyword = (document.getElementById('food-search-input')?.value || '').toLowerCase().trim();
+    const hideOutOfStock = document.getElementById('toggle-hide-out-of-stock')?.checked ?? true;
     
     let filtered = productsData;
+    if (hideOutOfStock) {
+        filtered = filtered.filter(p => !p.status || p.status === 'AVAILABLE' || p.status === 'ACTIVE');
+    }
     if (selectedCategoryId !== 0) {
         filtered = filtered.filter(p => p.categoryId === selectedCategoryId);
     }
     if (keyword) {
-        filtered = filtered.filter(p => p.name.toLowerCase().includes(keyword));
+        filtered = filtered.filter(p => (p.name || '').toLowerCase().includes(keyword));
     }
     
     currentFilteredProducts = filtered;
@@ -566,7 +602,13 @@ function renderProducts() {
 
     const countLabel = document.getElementById('food-count-label');
     if (countLabel) {
-        countLabel.innerText = `Tìm thấy ${products.length} món ăn`;
+        const hideOutOfStock = document.getElementById('toggle-hide-out-of-stock')?.checked ?? true;
+        const outOfStockCount = productsData.filter(p => p.status && p.status !== 'AVAILABLE' && p.status !== 'ACTIVE').length;
+        if (hideOutOfStock && outOfStockCount > 0) {
+            countLabel.innerHTML = `Tìm thấy <b>${products.length}</b> món <span style="font-size:12px; color:#ef4444; font-weight:normal;">(Đang ẩn ${outOfStockCount} món hết)</span>`;
+        } else {
+            countLabel.innerHTML = `Tìm thấy <b>${products.length}</b> món ăn`;
+        }
     }
 
     const container = document.getElementById('products-container');
@@ -594,6 +636,8 @@ function renderProducts() {
             imgUrl = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=350&auto=format&fit=crop&q=60";
         }
 
+        const isOutOfStock = p.status && p.status !== 'AVAILABLE' && p.status !== 'ACTIVE';
+
         // Kiểm tra số lượng đã chọn trong giỏ hàng hiện tại (hỗ trợ cả trường hợp món bị tách dòng)
         const matchingCartItems = cartItems.filter(it => it.productId === p.id);
         const qtyInCart = matchingCartItems.reduce((sum, it) => sum + (it.quantity || 0), 0);
@@ -610,8 +654,18 @@ function renderProducts() {
                         <button class="btn-stepper" onclick="changeItemQty(${inCartItem.id}, ${p.id}, -1)">-</button>
                     `}
                     <span class="stepper-val">${qtyInCart}</span>
-                    <button class="btn-stepper plus" onclick="changeItemQty(${inCartItem.id}, ${p.id}, 1)">+</button>
+                    ${isOutOfStock ? `
+                        <button class="btn-stepper" disabled style="opacity:0.35; cursor:not-allowed;" title="Món đã hết hàng, không thể thêm">+</button>
+                    ` : `
+                        <button class="btn-stepper plus" onclick="changeItemQty(${inCartItem.id}, ${p.id}, 1)">+</button>
+                    `}
                 </div>
+            `;
+        } else if (isOutOfStock) {
+            actionHtml = `
+                <button class="btn-dish-out-of-stock" disabled title="Món này tạm thời hết hàng">
+                    <i class="fa fa-times-circle"></i> Tạm hết
+                </button>
             `;
         } else {
             actionHtml = `
@@ -621,13 +675,21 @@ function renderProducts() {
             `;
         }
 
+        const clickHandler = isOutOfStock 
+            ? `showOutOfStockAlert('${escapeHtml(p.name)}'); event.stopPropagation();` 
+            : `quickAddToCart(${p.id})`;
+
         html += `
-        <div class="dish-card">
+        <div class="dish-card ${isOutOfStock ? 'is-out-of-stock' : ''}">
             <div class="dish-body">
                 <div>
-                    <h3 class="dish-title" onclick="quickAddToCart(${p.id})">${escapeHtml(p.name)}</h3>
+                    <h3 class="dish-title" onclick="${clickHandler}">${escapeHtml(p.name)}</h3>
                     <div class="dish-category-tag">${escapeHtml(p.categoryName || '')}</div>
-                    <span class="dish-portion-badge">Phần</span>
+                    ${isOutOfStock ? `
+                        <span class="dish-portion-badge dish-out-of-stock-badge"><i class="fa fa-ban"></i> HẾT HÀNG</span>
+                    ` : `
+                        <span class="dish-portion-badge">Phần</span>
+                    `}
                 </div>
                 <div class="dish-footer">
                     <div class="dish-price">${(p.price || 0).toLocaleString()} ₫</div>
@@ -636,13 +698,21 @@ function renderProducts() {
                     </div>
                 </div>
             </div>
-            <div class="dish-img-wrap" onclick="quickAddToCart(${p.id})">
+            <div class="dish-img-wrap" onclick="${clickHandler}">
                 <img src="${imgUrl}" alt="${escapeHtml(p.name)}" onerror="this.src='https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=350&auto=format&fit=crop&q=60'">
+                ${isOutOfStock ? `
+                    <div class="dish-out-of-stock-overlay">
+                        <span class="dish-out-of-stock-overlay-text"><i class="fa fa-ban"></i> HẾT HÀNG</span>
+                    </div>
+                ` : ''}
             </div>
         </div>`;
     });
 
     container.innerHTML = html;
+    if (typeof updateOrderShiftBanner === 'function') {
+        updateOrderShiftBanner();
+    }
     renderProductPagination(products.length);
 }
 
@@ -680,6 +750,10 @@ window.changeProductPage = function(page, e) {
 
 /* THÊM MÓN & ĐIỀU CHỈNH SỐ LƯỢNG TIỆN LỢI */
 window.quickAddToCart = async function(productId) {
+    if (!checkActiveShiftOrAlertOrder("gọi món / thêm món")) {
+        return;
+    }
+
     if (!currentOrder) {
         Swal.fire({
             icon: 'warning',
@@ -692,6 +766,11 @@ window.quickAddToCart = async function(productId) {
 
     const product = productsData.find(p => p.id === productId);
     if (!product) return;
+
+    if (product.status && product.status !== 'AVAILABLE' && product.status !== 'ACTIVE') {
+        window.showOutOfStockAlert(product.name);
+        return;
+    }
 
     try {
         const existingItem = cartItems.find(item => item.productId === product.id);
@@ -791,8 +870,20 @@ window.quickAddToCart = async function(productId) {
 };
 
 window.changeItemQty = async function(itemId, productId, delta) {
+    if (delta > 0 && !checkActiveShiftOrAlertOrder("thêm số lượng món")) {
+        return;
+    }
     const item = cartItems.find(it => it.id === itemId);
     if (!item) return;
+
+    // Chặn tăng số lượng nếu món này đã hết hàng
+    if (delta > 0) {
+        const prod = productsData.find(p => p.id === productId);
+        if (prod && prod.status && prod.status !== 'AVAILABLE' && prod.status !== 'ACTIVE') {
+            window.showOutOfStockAlert(prod.name || item.productName || 'món');
+            return;
+        }
+    }
 
     // Chặn xóa hoặc giảm món khi bếp đang nấu hoặc đã hoàn thành
     if (delta < 0 && (item.status === 'PREPARING' || item.status === 'READY')) {
@@ -1408,6 +1499,9 @@ window.switchActiveTable = async function(tableId) {
 };
 
 async function createNewOrderForTable(table) {
+    if (!checkActiveShiftOrAlertOrder("mở bàn mới")) {
+        return;
+    }
     try {
         const tName = table.tableName || ('Bàn ' + table.id);
 
@@ -1524,6 +1618,9 @@ async function createNewOrderForTable(table) {
 /* GỬI ĐƠN SANG BẾP (KITCHEN DISPATCH) */
 window.sendOrderToKitchen = async function(e) {
     if (e) e.preventDefault();
+    if (!checkActiveShiftOrAlertOrder("gửi thực đơn sang bếp")) {
+        return;
+    }
     if (!currentOrder) {
         Swal.fire({ icon: 'warning', title: 'Chưa có đơn hàng', text: 'Vui lòng chọn bàn có đơn hàng trước!' });
         return;
@@ -1723,12 +1820,15 @@ window.cancelOrder = async function(e) {
     }
 };
 
-// Biến toàn cục quản lý chiết khấu / giảm giá khi thanh toán
+// Biến toàn cục quản lý chiết khấu / giảm giá / tiền nhận khi thanh toán
 window.checkoutSubtotal = 0;
 window.checkoutDepositAmount = 0;
 window.checkoutDiscountType = 'PERCENT'; // 'PERCENT' hoặc 'AMOUNT'
 window.checkoutDiscountPercent = 0;
 window.checkoutDiscountCash = 0;
+window.checkoutFinalTotal = 0;
+window.checkoutReceivedCash = 0;
+window.checkoutChangeCash = 0;
 
 window.setDiscountType = function(type) {
     window.checkoutDiscountType = type;
@@ -1775,6 +1875,81 @@ window.applyQuickDiscountAmount = function(val) {
     const input = document.getElementById('checkoutDiscountInput');
     if (input) input.value = val;
     recalculateCheckoutTotal();
+};
+
+window.onReceivedCashInput = function(rawVal) {
+    const raw = String(rawVal || '').replace(/\D/g, '');
+    const num = raw ? parseInt(raw, 10) : 0;
+    window.checkoutReceivedCash = num;
+    const inp = document.getElementById('checkoutReceivedCashInput');
+    if (inp) {
+        inp.value = raw ? num.toLocaleString('vi-VN') : '';
+    }
+    recalculateCashChange();
+};
+
+window.applyQuickReceivedCash = function(val) {
+    let targetAmount = 0;
+    if (val === 'EXACT') {
+        targetAmount = window.checkoutFinalTotal || 0;
+    } else {
+        targetAmount = Number(val) || 0;
+    }
+    window.checkoutReceivedCash = targetAmount;
+    const inp = document.getElementById('checkoutReceivedCashInput');
+    if (inp) {
+        inp.value = targetAmount > 0 ? targetAmount.toLocaleString('vi-VN') : (targetAmount === 0 ? '0' : '');
+    }
+    recalculateCashChange();
+};
+
+window.recalculateCashChange = function() {
+    const orderTotal = window.checkoutFinalTotal || 0; // Tiền đơn
+    const received = window.checkoutReceivedCash || 0; // Tiền nhận
+    
+    const labelEl = document.getElementById('checkoutChangeLabel');
+    const displayEl = document.getElementById('checkoutChangeDisplay');
+    const formulaEl = document.getElementById('checkoutFormulaNotice');
+    
+    if (!displayEl || !labelEl) return;
+
+    const inp = document.getElementById('checkoutReceivedCashInput');
+    if (!inp || inp.value === '') {
+        labelEl.innerHTML = '<i class="fa fa-calculator text-primary"></i> TIỀN PHẢI TRẢ LẠI:';
+        labelEl.style.color = '#334155';
+        displayEl.innerText = '0 ₫';
+        displayEl.style.color = '#64748b';
+        if (formulaEl) {
+            formulaEl.innerHTML = `(Tiền nhận - Tiền đơn: ${orderTotal.toLocaleString('vi-VN')} ₫ = Tiền phải trả khách)`;
+        }
+        window.checkoutChangeCash = 0;
+        return;
+    }
+
+    // Tiền nhận trừ tiền đơn = Tiền phải trả lại khách (Tiền thối)
+    const diff = received - orderTotal;
+    window.checkoutChangeCash = diff;
+
+    if (diff >= 0) {
+        // Tiền nhận >= Tiền đơn -> Tiền phải trả lại khách (Tiền thối)
+        labelEl.innerHTML = '<i class="fa fa-hand-holding-usd text-success"></i> TIỀN PHẢI TRẢ LẠI KHÁCH:';
+        labelEl.style.color = '#15803d';
+        displayEl.innerText = `${diff.toLocaleString('vi-VN')} ₫`;
+        displayEl.style.color = '#16a34a';
+        if (formulaEl) {
+            formulaEl.innerHTML = `Nhận <b>${received.toLocaleString('vi-VN')} ₫</b> — Đơn <b>${orderTotal.toLocaleString('vi-VN')} ₫</b> = <b style="color:#16a34a;">Thối lại ${diff.toLocaleString('vi-VN')} ₫</b>`;
+        }
+    } else {
+        // Tiền nhận < Tiền đơn -> Khách còn thiếu (Tiền khách phải trả thêm)
+        const missing = Math.abs(diff);
+        labelEl.innerHTML = '<i class="fa fa-exclamation-triangle text-danger"></i> CÒN THIẾU (KHÁCH PHẢI TRẢ THÊM):';
+        labelEl.style.color = '#b91c1c';
+        displayEl.innerText = `-${missing.toLocaleString('vi-VN')} ₫`;
+        displayEl.style.color = '#dc2626';
+        if (formulaEl) {
+            formulaEl.innerHTML = `Nhận <b>${received.toLocaleString('vi-VN')} ₫</b> — Đơn <b>${orderTotal.toLocaleString('vi-VN')} ₫</b> = <b style="color:#dc2626;">Còn thiếu ${missing.toLocaleString('vi-VN')} ₫</b>`;
+        }
+    }
 };
 
 window.recalculateCheckoutTotal = function() {
@@ -1832,14 +2007,20 @@ window.recalculateCheckoutTotal = function() {
 
     let finalTotal = window.checkoutSubtotal - discountMoney - window.checkoutDepositAmount;
     if (finalTotal < 0) finalTotal = 0;
+    window.checkoutFinalTotal = finalTotal;
 
     const totalEl = document.getElementById('checkoutTotal');
-    if (totalEl) totalEl.innerText = `THỰC THU: ${finalTotal.toLocaleString()} VNĐ`;
+    if (totalEl) totalEl.innerText = `${finalTotal.toLocaleString()} VNĐ`;
+
+    recalculateCashChange();
 };
 
 /* THANH TOÁN TIỆN LỢI */
 window.payOrder = function(e) {
     if(e) e.preventDefault();
+    if (!checkActiveShiftOrAlertOrder("thanh toán hóa đơn")) {
+        return;
+    }
     if(!currentOrder) return;
     
     const roles = JSON.parse(localStorage.getItem('userRoles') || '[]');
@@ -1899,6 +2080,14 @@ window.payOrder = function(e) {
     document.getElementById('checkoutSummary').innerHTML = html || '<p class="text-muted text-center">Chưa có món nào</p>';
     recalculateCheckoutTotal();
     
+    // Khởi tạo ô nhập tiền nhận bằng đúng tiền đơn để thu ngân dễ đối chiếu
+    const inpReceived = document.getElementById('checkoutReceivedCashInput');
+    if (inpReceived) {
+        inpReceived.value = window.checkoutFinalTotal > 0 ? window.checkoutFinalTotal.toLocaleString('vi-VN') : '0';
+        window.checkoutReceivedCash = window.checkoutFinalTotal;
+        recalculateCashChange();
+    }
+
     $('#checkoutModal').modal('show');
 };
 
@@ -1922,6 +2111,8 @@ window.confirmCheckout = async function() {
         const orderSnapshot = currentOrder ? { ...currentOrder } : null;
         const tableSnapshot = currentTable ? { ...currentTable } : null;
         const cartSnapshot = [...cartItems];
+        const receivedCash = window.checkoutReceivedCash || 0;
+        const changeCash = window.checkoutChangeCash || 0;
 
         // 1. Tạo Invoice cho Order này với thông tin giảm giá
         const invRes = await fetchWithAuth(`/invoices/add`, {
@@ -1961,6 +2152,26 @@ window.confirmCheckout = async function() {
         currentOrder = null;
         currentTable = null;
         cartItems = [];
+
+        let changeAlertHtml = '';
+        if (receivedCash > 0) {
+            if (changeCash > 0) {
+                changeAlertHtml = `
+                    <div style="background:#f0fdf4; border:1.5px solid #86efac; border-radius:8px; padding:10px 14px; margin-top:10px; color:#166534; font-size:14px; text-align:left;">
+                        <div>💵 <b>Tiền nhận từ khách:</b> <span style="font-weight:bold; color:#15803d;">${receivedCash.toLocaleString('vi-VN')} ₫</span></div>
+                        <div style="margin-top:4px; font-size:16px;">
+                            👉 <b style="color:#15803d;">Tiền phải trả lại khách:</b> <span style="font-size:20px; font-weight:900; color:#16a34a;">${changeCash.toLocaleString('vi-VN')} ₫</span>
+                        </div>
+                    </div>
+                `;
+            } else if (changeCash === 0) {
+                changeAlertHtml = `
+                    <div style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:6px; padding:8px 12px; margin-top:10px; color:#334155; font-size:13.5px;">
+                        <i class="fa fa-check-circle text-success"></i> Khách đã thanh toán đúng đủ: <b>${receivedCash.toLocaleString('vi-VN')} ₫</b>
+                    </div>
+                `;
+            }
+        }
         
         await Swal.fire({
             icon: 'success',
@@ -1968,14 +2179,15 @@ window.confirmCheckout = async function() {
             html: `
                 <div style="font-size: 16px; color: #444; margin-top: 10px;">
                     Đã thanh toán xong hóa đơn <b>#${inv.invoiceCode || inv.id}</b>.<br>
-                    Đang tự động chuẩn bị in hóa đơn cho khách...
+                    ${changeAlertHtml}
+                    <div style="font-size:12.5px; color:#64748b; margin-top:8px;">Đang tự động chuẩn bị in hóa đơn cho khách...</div>
                 </div>
             `,
-            timer: 1000,
+            timer: 2000,
             showConfirmButton: false
         });
         
-        printInvoice(inv, orderSnapshot, tableSnapshot, cartSnapshot);
+        printInvoice(inv, orderSnapshot, tableSnapshot, cartSnapshot, receivedCash, changeCash);
         
         // Đồng bộ ngay lập tức số tiền mặt thực tế trong két nếu đơn thanh toán bằng tiền mặt
         syncCurrentCashierDrawerCash();
@@ -2010,8 +2222,10 @@ function formatReceiptDateTime(rawDate, fallbackDate = null) {
     return dt.toLocaleString('vi-VN');
 }
 
-function printInvoice(inv, orderSnapshot, tableSnapshot, cartSnapshot) {
+function printInvoice(inv, orderSnapshot, tableSnapshot, cartSnapshot, receivedCashOverride = null, changeCashOverride = null) {
     const rawItems = (inv.items && inv.items.length > 0) ? inv.items : (inv.invoiceItems || cartSnapshot || []);
+    const receivedCash = receivedCashOverride !== null ? receivedCashOverride : (window.checkoutReceivedCash || 0);
+    const changeCash = changeCashOverride !== null ? changeCashOverride : (window.checkoutChangeCash || 0);
     let itemsHtml = rawItems.map((it, i) => {
         const pName = it.productName || (it.product ? it.product.name : 'Món');
         const price = it.unitPrice || it.price || 0;
@@ -2153,9 +2367,18 @@ function printInvoice(inv, orderSnapshot, tableSnapshot, cartSnapshot) {
                         <span>- ${depositAmount.toLocaleString()} ₫</span>
                     </div>` : ''}
                     <div class="total-row grand-total">
-                        <span>THỰC THU:</span>
+                        <span>THỰC THU (TIỀN ĐƠN):</span>
                         <span>${finalTotal.toLocaleString()} ₫</span>
                     </div>
+                    ${receivedCash > 0 ? `
+                    <div class="total-row" style="margin-top: 6px; padding-top: 4px; border-top: 1px dashed #000; font-size: 12.5px;">
+                        <span>Tiền nhận từ khách:</span>
+                        <span>${receivedCash.toLocaleString()} ₫</span>
+                    </div>
+                    <div class="total-row" style="font-size: 13px; font-weight: 900;">
+                        <span>${changeCash >= 0 ? 'Tiền trả lại khách:' : 'Khách còn thiếu:'}</span>
+                        <span>${Math.abs(changeCash).toLocaleString()} ₫</span>
+                    </div>` : ''}
                 </div>
 
                 <!-- MÃ QR THANH TOÁN CỦA CHỦ QUÁN -->
@@ -2385,9 +2608,18 @@ window.printTemporaryBill = function(e) {
                         <span>- ${depositAmount.toLocaleString()} ₫</span>
                     </div>` : ''}
                     <div class="total-row grand-total">
-                        <span>TỔNG TẠM TÍNH:</span>
+                        <span>TỔNG TẠM TÍNH (TIỀN ĐƠN):</span>
                         <span>${finalTotal.toLocaleString()} ₫</span>
                     </div>
+                    ${(window.checkoutReceivedCash || 0) > 0 ? `
+                    <div class="total-row" style="margin-top: 6px; padding-top: 4px; border-top: 1px dashed #000; font-size: 12.5px;">
+                        <span>Tiền nhận từ khách:</span>
+                        <span>${(window.checkoutReceivedCash || 0).toLocaleString()} ₫</span>
+                    </div>
+                    <div class="total-row" style="font-size: 13px; font-weight: 900;">
+                        <span>${(window.checkoutChangeCash || 0) >= 0 ? 'Tiền trả lại khách:' : 'Khách còn thiếu:'}</span>
+                        <span>${Math.abs(window.checkoutChangeCash || 0).toLocaleString()} ₫</span>
+                    </div>` : ''}
                 </div>
 
                 <!-- MÃ QR THANH TOÁN CỦA CHỦ QUÁN -->
@@ -2832,16 +3064,34 @@ function startOrderRealtimeSync() {
             }
         } catch(e) {}
     }, 4000);
+
+    // Tự động kiểm tra & đồng bộ thực đơn từ máy chủ định kỳ (mỗi 15 giây)
+    setInterval(() => {
+        if (!$('.modal.in').length && !Swal.isVisible()) {
+            window.reloadProductsMenu();
+        }
+    }, 15000);
 }
 
 // =============================================================
 // QUẢN LÝ TIỀN KÉT ĐẦU CA & BÁO CÁO KẾT CA THU NGÂN
 // =============================================================
 function getActiveCashierShift() {
+    const pad = n => String(n).padStart(2, '0');
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+
     const userId = localStorage.getItem('userId');
     const userEmail = localStorage.getItem('userEmail');
     const currentName = getCashierDisplayName();
     const myKey = (currentName || '').trim().toLowerCase();
+
+    const isShiftValid = (s) => {
+        if (!s || s.status !== 'OPEN') return false;
+        const sDate = s.shiftStartTime ? s.shiftStartTime.split('T')[0] : (s.date || '');
+        if (sDate && sDate !== todayStr) return false;
+        return true;
+    };
 
     // 1. Kiểm tra trong registry đa ca activeCashierShifts_map
     try {
@@ -2849,10 +3099,10 @@ function getActiveCashierShift() {
         if (mapRaw) {
             const map = JSON.parse(mapRaw);
             if (map && typeof map === 'object') {
-                if (myKey && map[myKey] && map[myKey].status === 'OPEN') {
+                if (myKey && map[myKey] && isShiftValid(map[myKey])) {
                     return map[myKey];
                 }
-                const activeEntries = Object.values(map).filter(s => s && s.status === 'OPEN');
+                const activeEntries = Object.values(map).filter(isShiftValid);
                 if (activeEntries.length > 0) {
                     return activeEntries[activeEntries.length - 1];
                 }
@@ -2870,25 +3120,79 @@ function getActiveCashierShift() {
     if (shiftRaw) {
         try {
             const shift = JSON.parse(shiftRaw);
-            if (shift && shift.status === 'OPEN') {
+            if (isShiftValid(shift)) {
                 return shift;
             }
         } catch(e) {}
     }
     
-    const savedCash = localStorage.getItem('shiftOpeningCash');
-    const savedTime = localStorage.getItem('shiftOpeningTime') || localStorage.getItem('shiftLoginTime');
-    if (savedCash !== null && savedCash !== undefined && savedTime) {
-        return {
-            openingCash: parseInt(savedCash, 10) || 0,
-            shiftStartTime: savedTime,
-            cashierName: localStorage.getItem('shiftOpeningCashier') || currentName,
-            cashierId: userId,
-            status: 'OPEN'
-        };
-    }
     return null;
 }
+
+function isShiftActive() {
+    const shift = getActiveCashierShift();
+    if (!shift) return false;
+    if (shift.status && shift.status !== 'OPEN') return false;
+    return true;
+}
+window.isShiftActive = isShiftActive;
+
+window.updateOrderShiftBanner = function() {
+    const isShiftOpen = isShiftActive();
+    const banner = document.getElementById('order-shift-view-only-banner');
+    const openBtn = document.getElementById('btn-order-banner-open-shift');
+    
+    const roles = JSON.parse(localStorage.getItem('userRoles') || '[]');
+    const singleRole = localStorage.getItem('role') || localStorage.getItem('userRole') || '';
+    const allRoles = [...roles, singleRole];
+    const isCashierOrAdmin = allRoles.some(r => typeof r === 'string' && (r.toUpperCase().includes('ADMIN') || r.toUpperCase().includes('CASHIER')));
+
+    if (banner) {
+        banner.style.display = isShiftOpen ? 'none' : 'flex';
+    }
+    if (openBtn) {
+        openBtn.style.display = isCashierOrAdmin ? 'inline-block' : 'none';
+    }
+};
+
+window.checkActiveShiftOrAlertOrder = function(actionDesc = "gọi món / thêm món") {
+    if (isShiftActive()) {
+        return true;
+    }
+
+    const roles = JSON.parse(localStorage.getItem('userRoles') || '[]');
+    const singleRole = localStorage.getItem('role') || localStorage.getItem('userRole') || '';
+    const allRoles = [...roles, singleRole];
+    const isCashierOrAdmin = allRoles.some(r => typeof r === 'string' && (r.toUpperCase().includes('ADMIN') || r.toUpperCase().includes('CASHIER')));
+
+    if (isCashierOrAdmin) {
+        Swal.fire({
+            icon: 'warning',
+            title: 'Chưa mở ca làm việc!',
+            html: `Hệ thống chưa mở ca làm việc hôm nay.<br><b>Bắt buộc phải mở ca</b> (kiểm đếm & nhập tiền két đầu ca) trước khi ${actionDesc}!<br><br><small class="text-muted">Khi chưa mở ca, hệ thống chỉ cho phép xem thực đơn món ăn.</small>`,
+            showCancelButton: true,
+            confirmButtonText: '<i class="fa fa-unlock"></i> Mở ca làm việc ngay',
+            cancelButtonText: 'Đóng (Chỉ xem thực đơn)',
+            confirmButtonColor: '#d97706',
+            cancelButtonColor: '#64748b'
+        }).then((result) => {
+            if (result && result.isConfirmed) {
+                if (typeof promptCashierOpeningCashModal === 'function') {
+                    promptCashierOpeningCashModal(false);
+                }
+            }
+        });
+    } else {
+        Swal.fire({
+            icon: 'warning',
+            title: 'Quầy thu ngân chưa mở ca!',
+            html: `Hệ thống đang ở <b>chế độ chỉ xem thực đơn</b>.<br>Thu ngân / Quản lý chưa mở ca làm việc đầu ngày nên chưa thể ${actionDesc}.<br><br><small class="text-muted">Vui lòng báo thu ngân mở ca để bắt đầu phục vụ gọi món.</small>`,
+            confirmButtonColor: '#d10024',
+            confirmButtonText: '<i class="fa fa-check"></i> Đã hiểu (Chỉ xem thực đơn)'
+        });
+    }
+    return false;
+};
 
 function getCashierOpeningCash() {
     const shift = getActiveCashierShift();

@@ -797,6 +797,10 @@ async function handleSaveProduct(e) {
         showAlert(res.message || "Lưu món ăn thành công!", "success");
         $('#productModal').modal('hide');
         loadProducts();
+        try {
+            const menuBc = new BroadcastChannel('restaurant_menu_sync');
+            menuBc.postMessage({ type: 'PRODUCTS_UPDATED' });
+        } catch(e) {}
     } catch (err) {
         showAlert("Lưu món ăn thất bại: " + err.message, "error");
     }
@@ -808,6 +812,10 @@ async function deleteProduct(id) {
         await fetchWithAuth(`/api/v1/products/${id}`, { method: 'DELETE' });
         showAlert("Xóa món ăn thành công!", "success");
         loadProducts();
+        try {
+            const menuBc = new BroadcastChannel('restaurant_menu_sync');
+            menuBc.postMessage({ type: 'PRODUCTS_UPDATED' });
+        } catch(e) {}
     } catch (err) {
         showAlert("Xóa món ăn thất bại: " + err.message, "error");
     }
@@ -2534,7 +2542,22 @@ async function viewInvoiceDetails(id) {
 
         document.getElementById('printInvoiceBtn').onclick = () => printInvoiceWindow(inv);
 
+        // Đảm bảo z-index cao hơn nếu đang mở từ modal ca làm việc
+        const shiftModalOpen = $('#cashierShiftOrdersModal').hasClass('show');
+        if (shiftModalOpen) {
+            $('#invoiceDetailsModal').css('z-index', 1065);
+        }
+
         $('#invoiceDetailsModal').modal('show');
+
+        if (shiftModalOpen) {
+            setTimeout(() => {
+                const backdrops = $('.modal-backdrop');
+                if (backdrops.length > 1) {
+                    backdrops.last().addClass('stacked-backdrop').css('z-index', 1060);
+                }
+            }, 30);
+        }
     } catch (err) {
         showAlert("Không thể tải chi tiết hóa đơn: " + err.message, "error");
     }
@@ -5326,5 +5349,42 @@ setInterval(() => {
         }
     }
 }, 5000);
+
+// =============================================================
+// MULTI-MODAL STACKING & SCROLL RESTORATION (XỬ LÝ MODAL ĐÈ NHAU)
+// =============================================================
+// Đảm bảo khi mở modal đè lên modal khác (ví dụ: xem món trong ca làm việc),
+// modal mới và backdrop của nó nổi lên trên cùng, và khi đóng không bị mất scroll của modal dưới.
+$(document).on('show.bs.modal', '.modal', function () {
+    const visibleModals = $('.modal.show').not(this);
+    if (visibleModals.length > 0 || (this.id === 'invoiceDetailsModal' && $('#cashierShiftOrdersModal').hasClass('show'))) {
+        const nextZ = 1055 + (Math.max(visibleModals.length, 1) * 10);
+        $(this).css('z-index', nextZ);
+        setTimeout(() => {
+            const backdrops = $('.modal-backdrop');
+            if (backdrops.length > 1) {
+                backdrops.last().addClass('stacked-backdrop').css('z-index', nextZ - 5);
+            }
+        }, 15);
+    }
+});
+
+$(document).on('shown.bs.modal', '.modal', function () {
+    if ($('.modal.show').length > 0) {
+        $('body').addClass('modal-open');
+    }
+});
+
+$(document).on('hidden.bs.modal', '.modal', function () {
+    if (this.id !== 'invoiceDetailsModal') {
+        $(this).css('z-index', '');
+    }
+    const remainingModals = $('.modal.show');
+    if (remainingModals.length > 0) {
+        // Phục hồi class modal-open và overflow-y cho modal đang hiển thị phía dưới
+        $('body').addClass('modal-open');
+        remainingModals.last().focus().css('overflow-y', 'auto');
+    }
+});
 
 

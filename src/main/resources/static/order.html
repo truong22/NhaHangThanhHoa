@@ -494,6 +494,62 @@
             color: #111;
         }
 
+        /* OUT OF STOCK DISH STYLING */
+        .dish-card.is-out-of-stock {
+            opacity: 0.62;
+            filter: grayscale(65%);
+            background-color: #f8fafc;
+            border-color: #cbd5e1;
+            transition: all 0.2s ease;
+        }
+        .dish-card.is-out-of-stock:hover {
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+            border-color: #cbd5e1;
+        }
+        .dish-out-of-stock-badge {
+            background-color: #fee2e2 !important;
+            color: #dc2626 !important;
+            border-color: #fca5a5 !important;
+            font-weight: 700 !important;
+        }
+        .btn-dish-out-of-stock {
+            background-color: #fee2e2;
+            color: #dc2626;
+            border: 1px solid #fca5a5;
+            font-size: 12px;
+            font-weight: 700;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: not-allowed;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            user-select: none;
+        }
+        .dish-out-of-stock-overlay {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(15, 23, 42, 0.45);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2;
+        }
+        .dish-out-of-stock-overlay-text {
+            background-color: #dc2626;
+            color: #ffffff;
+            font-size: 12px;
+            font-weight: 800;
+            padding: 4px 10px;
+            border-radius: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
         /* BOTTOM ORDER / CHECKOUT BAR */
         .tablet-bottom-bar {
             height: 60px;
@@ -925,8 +981,33 @@
                     <i class="fa fa-search"></i>
                     <input type="text" id="food-search-input" placeholder="Tìm kiếm món ăn, đồ uống..." oninput="onSearchInput(this.value)">
                 </div>
-                <div style="font-size: 13px; color: #666; font-weight: 500;" id="food-count-label">
-                    Đang hiển thị món ăn
+                <div style="display: flex; align-items: center; gap: 14px;">
+                    <label class="form-check-label d-flex align-items-center" style="font-size: 13px; color: #475569; cursor: pointer; user-select: none; margin: 0; gap: 6px; font-weight: 600;" title="Ẩn hoặc hiện các món đã hết hàng">
+                        <input type="checkbox" id="toggle-hide-out-of-stock" onchange="applyFilters()" style="cursor: pointer; width: 16px; height: 16px; accent-color: #d10024;" checked>
+                        <span>Ẩn món hết hàng</span>
+                    </label>
+                    <div style="font-size: 13px; color: #666; font-weight: 500;" id="food-count-label">
+                        Đang hiển thị món ăn
+                    </div>
+                </div>
+            </div>
+
+            <!-- SHIFT VIEW-ONLY ALERT BANNER -->
+            <div id="order-shift-view-only-banner" style="display: none; background: #fffbeb; border: 1.5px solid #fde68a; border-radius: 8px; padding: 10px 16px; margin: 8px 16px 12px 16px; align-items: center; justify-content: space-between; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                <div style="display: flex; align-items: center; gap: 10px; color: #92400e;">
+                    <i class="fa fa-lock" style="font-size: 22px; color: #d97706;"></i>
+                    <div>
+                        <div style="font-weight: bold; font-size: 14px;">Chế Độ Xem Thực Đơn (Chưa Mở Ca)</div>
+                        <div style="font-size: 12.5px; color: #b45309;">Hệ thống chưa mở ca làm việc hôm nay. Bạn chỉ có thể xem món ăn. Bắt buộc phải mở ca trước khi gọi món hoặc mở bàn mới.</div>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 8px; align-items: center; flex-shrink: 0;">
+                    <button id="btn-order-banner-open-shift" type="button" class="btn btn-warning btn-sm" style="background: #d97706; border: none; font-weight: bold; font-size: 13px; color: #fff; padding: 6px 14px; border-radius: 6px;" onclick="promptCashierOpeningCashModal(false)">
+                        <i class="fa fa-unlock"></i> Mở Ca Làm Việc Ngay
+                    </button>
+                    <a href="/pos-tables" class="btn btn-default btn-sm" style="font-weight: 600; font-size: 13px; padding: 6px 12px; border-radius: 6px; text-decoration: none;">
+                        <i class="fa fa-th"></i> Sơ đồ bàn
+                    </a>
                 </div>
             </div>
 
@@ -1093,8 +1174,50 @@
                             <span id="checkoutDepositDisplay" style="font-weight: bold;">-0 ₫</span>
                         </div>
                         <div style="border-top: 1px dashed #cbd5e1; margin-top: 6px; padding-top: 6px; display: flex; justify-content: space-between; align-items: center;">
-                            <strong style="font-size: 15px; color: #1e293b;">THỰC THU:</strong>
+                            <strong style="font-size: 15px; color: #1e293b;">THỰC THU (TIỀN ĐƠN):</strong>
                             <strong id="checkoutTotal" style="color: var(--haidilao-red); font-size: 20px; font-weight: 900;">0 VNĐ</strong>
+                        </div>
+                    </div>
+
+                    <!-- KHUNG TIỀN NHẬN & TÍNH TIỀN PHẢI TRẢ LẠI KHÁCH -->
+                    <div id="cash-change-calculator-box" style="background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 8px; padding: 12px; margin-bottom: 15px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                            <label style="margin: 0; font-weight: bold; font-size: 13.5px; color: #166534;">
+                                💵 TIỀN NHẬN TỪ KHÁCH:
+                            </label>
+                            <span id="checkoutFormulaNotice" style="font-size: 11.5px; color: #15803d; font-style: italic;">(Tiền nhận - Tiền đơn = Tiền phải trả khách)</span>
+                        </div>
+
+                        <!-- Ô nhập tiền nhận -->
+                        <div class="input-group" style="margin-bottom: 8px;">
+                            <span class="input-group-addon" style="font-weight: bold; background: #dcfce7; color: #15803d; border-color: #86efac; font-size: 14px;">
+                                <i class="fa fa-money"></i>
+                            </span>
+                            <input type="text" id="checkoutReceivedCashInput" class="form-control" placeholder="Nhập số tiền khách đưa..." oninput="onReceivedCashInput(this.value)" onfocus="this.select()" style="height: 42px; font-size: 18px; font-weight: bold; color: #15803d; border-color: #86efac; background: #fff;">
+                            <span class="input-group-addon" style="font-weight: bold; background: #dcfce7; color: #15803d; border-color: #86efac; font-size: 13px;">VNĐ</span>
+                        </div>
+
+                        <!-- Các nút chọn nhanh số tiền nhận -->
+                        <div style="display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 8px;">
+                            <button type="button" class="btn btn-default btn-xs" onclick="applyQuickReceivedCash('EXACT')" style="border-radius: 12px; font-size: 11px; padding: 3px 10px; font-weight: bold; background: #dcfce7; border-color: #86efac; color: #166534;" title="Khách trả đúng số tiền của đơn">
+                                <i class="fa fa-check"></i> Đủ tiền đơn
+                            </button>
+                            <button type="button" class="btn btn-default btn-xs" onclick="applyQuickReceivedCash(50000)" style="border-radius: 12px; font-size: 11px; padding: 3px 8px; background: #fff;">50k</button>
+                            <button type="button" class="btn btn-default btn-xs" onclick="applyQuickReceivedCash(100000)" style="border-radius: 12px; font-size: 11px; padding: 3px 8px; background: #fff;">100k</button>
+                            <button type="button" class="btn btn-default btn-xs" onclick="applyQuickReceivedCash(200000)" style="border-radius: 12px; font-size: 11px; padding: 3px 8px; background: #fff;">200k</button>
+                            <button type="button" class="btn btn-default btn-xs" onclick="applyQuickReceivedCash(500000)" style="border-radius: 12px; font-size: 11px; padding: 3px 8px; background: #fff;">500k</button>
+                            <button type="button" class="btn btn-default btn-xs" onclick="applyQuickReceivedCash(1000000)" style="border-radius: 12px; font-size: 11px; padding: 3px 8px; background: #fff;">1.000k</button>
+                            <button type="button" class="btn btn-default btn-xs" onclick="applyQuickReceivedCash(2000000)" style="border-radius: 12px; font-size: 11px; padding: 3px 8px; background: #fff;">2.000k</button>
+                        </div>
+
+                        <!-- Bảng kết quả trừ tiền đơn: Tiền phải trả lại khách / Còn thiếu -->
+                        <div id="checkoutChangeResultRow" style="border-top: 1.5px dashed #86efac; padding: 8px 12px; margin-top: 4px; display: flex; justify-content: space-between; align-items: center; background: #ecfdf5; border-radius: 6px;">
+                            <span id="checkoutChangeLabel" style="font-weight: bold; font-size: 13.5px; color: #166534;">
+                                <i class="fa fa-hand-holding-usd text-success"></i> TIỀN PHẢI TRẢ LẠI KHÁCH:
+                            </span>
+                            <span id="checkoutChangeDisplay" style="font-size: 19px; font-weight: 900; color: #16a34a;">
+                                0 ₫
+                            </span>
                         </div>
                     </div>
                     
@@ -1126,6 +1249,6 @@
     <script src="js/jquery.min.js"></script>
     <script src="js/bootstrap.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-    <script src="order-app.js?v=3.5"></script>
+    <script src="order-app.js?v=3.8"></script>
 </body>
 </html>
